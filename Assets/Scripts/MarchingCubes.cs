@@ -51,7 +51,7 @@ public class MarchingCubes
         Vector3[] verts = new Vector3[3];
 
         int triIndex = cubeIndex * 15;
-        for (int i = 0; i < 16 && LookupTables.triangleTable[triIndex + i] != -1; i += 3)
+        for (int i = 0; i < 15 && LookupTables.triangleTable[triIndex + i] != -1; i += 3)
         {
             //create verticies for tri
             for (int j = 0; j < 3; j++)
@@ -62,11 +62,11 @@ public class MarchingCubes
                 verts[j] = cube[v1] + (cube[v2] - cube[v1]) * t;
             }
 
-            //the order verticies are used to make a tri. value points to next vertex index to use
+            //the order verticies are used to make a tri
             int count = g_map.verticies.Count;
+            g_map.indicies.Add(count);
             g_map.indicies.Add(count + 1);
             g_map.indicies.Add(count + 2);
-            g_map.indicies.Add(count);
 
             g_map.verticies.Add(verts[0]);
             g_map.verticies.Add(verts[1]);
