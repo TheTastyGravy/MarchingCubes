@@ -1,6 +1,6 @@
 {
     "name": "MarchingCubes",
-    "rootNamespace": "MarCub",
+    "rootNamespace": "",
     "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],
