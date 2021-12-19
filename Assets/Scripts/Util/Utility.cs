@@ -8,6 +8,19 @@ public class Node
     public float isoValue;
 }
 
+[System.Serializable]
+public class Chunk
+{
+    public FlatArray3D<Node> nodes;
+    public VoxelMap map;
+    // Used as an index in 3D space
+    public Vector3Int position;
+
+    public GameObject meshObject;
+    public MeshFilter meshFilter;
+    public Mesh mesh;
+}
+
 public class Utility
 {
     public static int GetCubeIndex(in Vector4[] cube, float surfaceLevel)

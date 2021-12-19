@@ -54,7 +54,6 @@ public class FlatArray3D<T>
 
     public T this[int x, int y, int z]
     {
-
         get { return m_array[(x * m_size.y + y) * m_size.z + z]; }
         set { m_array[(x * m_size.y + y) * m_size.z + z] = value; }
     }

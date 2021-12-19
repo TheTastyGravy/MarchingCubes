@@ -4,27 +4,76 @@ using UnityEngine;
 
 public class MarchingCubes
 {
-    private static float g_surfaceLevel;
-
-
-
+    /// <summary>
+    /// Generate mesh data for chunk, including gaps with neighbours
+    /// </summary>
+    /// <param name="chunk"></param>
+    /// <param name="surfaceLevel"></param>
+    /// <param name="useSmoothing">Should interpolation be used?</param>
+    /// <param name="verticies"></param>
+    /// <param name="triangles"></param>
     public static void MarchCubes(Chunk chunk, float surfaceLevel, bool useSmoothing, ref List<Vector3> verticies, ref List<int> triangles)
     {
-        g_surfaceLevel = surfaceLevel;
-
         Vector3Int size = chunk.nodes.Size;
+        bool isCubeValid;
+        bool xEdge, yEdge, zEdge;
 
-        for (int x = 0; x < size.x - 1; x++)
+        for (int x = 0; x < size.x; x++)
         {
-            for (int y = 0; y < size.y - 1; y++)
+            xEdge = x == size.x - 1;
+            for (int y = 0; y < size.y; y++)
             {
-                for (int z = 0; z < size.z - 1; z++)
+                yEdge = y == size.y - 1;
+                for (int z = 0; z < size.z; z++)
                 {
+                    zEdge = z == size.z - 1;
+                    isCubeValid = true;
                     // x, y, z, node value
                     Vector4 CreateCorner(int x, int y, int z)
                     {
-                        return new Vector4(x, y, z, chunk.nodes[x, y, z].isoValue);
+                        // Not an edge so we can use the current chunk
+                        if (!xEdge && !yEdge && !zEdge)
+                            return new Vector4(x, y, z, chunk.nodes[x, y, z].isoValue);
+                        // A nessesary neighbour doesnt exist, so dont try
+                        if (!isCubeValid)
+                            return Vector4.zero;
+
+                        Vector4 result = new Vector4(x, y, z, 0);
+                        // Check if we need to get a neighbouring chunk
+                        Vector3Int chunkIndex = Vector3Int.zero;
+                        if (x == size.x)
+                        {
+                            chunkIndex.x = 1;
+                            x = 0;
+                        }
+                        if (y == size.y)
+                        {
+                            chunkIndex.y = 1;
+                            y = 0;
+                        }
+                        if (z == size.z)
+                        {
+                            chunkIndex.z = 1;
+                            z = 0;
+                        }
+
+                        if (chunkIndex == Vector3Int.zero)
+                        {
+                            result.w = chunk.nodes[x, y, z].isoValue;
+                        }
+                        else
+                        {
+                            // Use the neighbour chunk
+                            Chunk current = chunk.map.GetChunk(chunk.position + chunkIndex);
+                            if (current == null)
+                                isCubeValid = false;
+                            else
+                                result.w = current.nodes[x, y, z].isoValue;
+                        }
+
+                        return result;
                     }
+
                     Vector4[] cube = new Vector4[8]
                     {
                         CreateCorner(x, y, z + 1),
@@ -36,15 +85,28 @@ public class MarchingCubes
                         CreateCorner(x + 1, y + 1, z),
                         CreateCorner(x, y + 1, z),
                     };
-                    ProcessCube(cube, ref verticies, ref triangles, useSmoothing);
+
+                    if (isCubeValid)
+                    {
+                        ProcessCube(cube, ref verticies, ref triangles, surfaceLevel, useSmoothing);
+                    }
                 }
             }
         }
     }
 
-    public static void ProcessCube(in Vector4[] cube, ref List<Vector3> verticies, ref List<int> triangles, bool useInterpolation = false)
+    /// <summary>
+    /// Generate mesh data for a single voxel
+    /// </summary>
+    /// <param name="cube">Corners forming the cube. [X, Y, Z, Value]</param>
+    /// <param name="verticies"></param>
+    /// <param name="triangles"></param>
+    /// <param name="surfaceLevel"></param>
+    /// <param name="useSmoothing">Should interpolation be used?</param>
+    public static void ProcessCube(in Vector4[] cube, ref List<Vector3> verticies, ref List<int> triangles, 
+                                   float surfaceLevel, bool useSmoothing)
     {
-        int cubeIndex = Utility.GetCubeIndex(cube, g_surfaceLevel);
+        int cubeIndex = Utility.GetCubeIndex(cube, surfaceLevel);
 
         int edgeVal = LookupTables.edgeTable[cubeIndex];
         if (edgeVal == 0)
@@ -60,7 +122,7 @@ public class MarchingCubes
             {
                 int v1 = LookupTables.edgeConnection[triList[i + j], 0];
                 int v2 = LookupTables.edgeConnection[triList[i + j], 1];
-                float t = useInterpolation ? (g_surfaceLevel - cube[v1].w) / (cube[v2].w - cube[v1].w) : 0.5f;
+                float t = useSmoothing ? (surfaceLevel - cube[v1].w) / (cube[v2].w - cube[v1].w) : 0.5f;
                 verts[j] = cube[v1] + (cube[v2] - cube[v1]) * t;
             }
 

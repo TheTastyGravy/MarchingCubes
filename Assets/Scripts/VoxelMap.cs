@@ -5,28 +5,19 @@ using UnityEngine;
 using UnityEditor;
 #endif
 
-[System.Serializable]
-public class Chunk
-{
-    public FlatArray3D<Node> nodes;
-
-    public Vector3Int pos;
-
-    public GameObject meshObject;
-    public MeshFilter meshFilter;
-    public Mesh mesh;
-}
-
-public class NodeMap : MonoBehaviour
+public class VoxelMap : MonoBehaviour
 {
     public List<Chunk> chunks = new List<Chunk>();
 
+    //temp
     public Vector2Int chunkCount = Vector2Int.zero;
 
     public Material material;
 
-    public int mapSize = 16;
+    // Size of chunk node array
+    public const int ChunkSize = 16;
 
+    [Space]
     public bool generate = false;
     public bool setValues = false;
     public float surface = 0.5f;
@@ -38,30 +29,30 @@ public class NodeMap : MonoBehaviour
 
 
 
-
-    private Chunk GetChunk(Vector3Int index)
+    public Chunk GetChunk(Vector3Int index)
     {
-        return chunks.Find((Chunk chunk) => chunk.pos == index);
+        return chunks.Find((Chunk chunk) => chunk.position == index);
     }
 
-    private bool ChunkExists(Vector3Int index)
+    public bool ChunkExists(Vector3Int index)
     {
-        return chunks.Exists((Chunk chunk) => chunk.pos == index);
+        return chunks.Exists((Chunk chunk) => chunk.position == index);
     }
 
 
-    private void SetupChunk(Vector3Int position)
+    public void SetupChunk(Vector3Int position)
     {
         if (ChunkExists(position))
             return;
 
         Chunk newChunk = new Chunk();
-        newChunk.nodes = new FlatArray3D<Node>(mapSize, mapSize, mapSize);
-        newChunk.pos = position;
+        newChunk.nodes = new FlatArray3D<Node>(ChunkSize, ChunkSize, ChunkSize);
+        newChunk.position = position;
+        newChunk.map = this;
         // Create object as child in correct position
         newChunk.meshObject = new GameObject("Chunk (" + position.x + " " + position.y + " " + position.z + ")");
         newChunk.meshObject.transform.SetParent(transform);
-        newChunk.meshObject.transform.SetPositionAndRotation(transform.position + position * mapSize, transform.rotation);
+        newChunk.meshObject.transform.SetPositionAndRotation(transform.position + position * ChunkSize, transform.rotation);
         // Setup mesh renderer
         newChunk.mesh = new Mesh();
         newChunk.mesh.name = "Mesh (" + position.x + " " + position.y + " " + position.z + ")";
@@ -73,7 +64,7 @@ public class NodeMap : MonoBehaviour
         chunks.Add(newChunk);
     }
 
-    private void DestroyChunk(Vector3Int position)
+    public void DestroyChunk(Vector3Int position)
     {
         if (!ChunkExists(position))
             return;
@@ -82,15 +73,19 @@ public class NodeMap : MonoBehaviour
         chunks.Remove(chunk);
 
         chunk.mesh.Clear();
-        //TODO: fix this
-        if (Application.isEditor)
+#if UNITY_EDITOR
+        IEnumerator DelayedDestroy(GameObject obj)
         {
-            DestroyImmediate(chunk.meshObject);
+            yield return null;
+            if (!EditorApplication.isPlaying)
+                DestroyImmediate(obj);
+            else
+                Destroy(obj);
         }
-        else
-        {
-            Destroy(chunk.meshObject);
-        }
+        StartCoroutine(DelayedDestroy(chunk.meshObject));
+#else
+        Destroy(chunk.meshObject);
+#endif
     }
 
 
@@ -107,7 +102,6 @@ public class NodeMap : MonoBehaviour
         List<Vector3> verticies = new List<Vector3>();
         List<int> triangles = new List<int>();
         MarchingCubes.MarchCubes(chunk, surface, smooth, ref verticies, ref triangles);
-        //TODO: do edges between chunks
 
         chunk.mesh.Clear();
         chunk.mesh.SetVertices(verticies);
@@ -116,6 +110,7 @@ public class NodeMap : MonoBehaviour
     }
 
 
+    //temp func. node data would be set by user
     private void SetValuesForAllChunks()
     {
         Vector3 offset = new Vector3(Random.Range(0f, 100f), Random.Range(0f, 100f), Random.Range(0f, 100f));
@@ -134,7 +129,7 @@ public class NodeMap : MonoBehaviour
         int count = chunks.Count;
         for (int i = count - 1; i >= 0; i--)
         {
-            DestroyChunk(chunks[i].pos);
+            DestroyChunk(chunks[i].position);
         }
 
         chunks.Clear();
@@ -144,7 +139,6 @@ public class NodeMap : MonoBehaviour
 
     private void OnValidate()
     {
-        //TODO: make this actualy work
         if (chunkCount.x * chunkCount.y != chunks.Count)
         {
             DestroyAllChunks();
@@ -187,7 +181,7 @@ public class NodeMap : MonoBehaviour
     private void SetChunkNodeValues(Vector3Int index, Vector3 offset)
     {
         Chunk chunk = GetChunk(index);
-        Vector3 basePos = (Vector3)index * mapSize * noiseSize + offset;
+        Vector3 basePos = (Vector3)index * ChunkSize * noiseSize + offset;
 
         for (int x = 0; x < chunk.nodes.Size.x; x++)
         {
