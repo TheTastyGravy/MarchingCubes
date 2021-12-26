@@ -36,4 +36,16 @@ public class Utility
         if (cube[7].w <= surfaceLevel) cubeIndex |= 128;
         return cubeIndex;
     }
+
+    /// <summary>
+    /// Interpolate to find the edge vertex 
+    /// </summary>
+    /// <param name="v1">The first corner</param>
+    /// <param name="v2">The secon corner</param>
+    /// <returns>The position of the edge vertex</returns>
+    public static Vector3 LerpEdge(Vector4 v1, Vector4 v2, float surfaceLevel, bool useSmoothing)
+    {
+        float t = useSmoothing ? (surfaceLevel - v1.w) / (v2.w - v1.w) : 0.5f;
+        return v1 + (v2 - v1) * t;
+    }
 }

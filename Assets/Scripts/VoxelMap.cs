@@ -101,7 +101,7 @@ public class VoxelMap : MonoBehaviour
     {
         List<Vector3> verticies = new List<Vector3>();
         List<int> triangles = new List<int>();
-        MarchingCubes.MarchCubes(chunk, surface, smooth, ref verticies, ref triangles);
+        MarchingCubes.MarchCubes(chunk, surface, smooth, verticies, triangles);
 
         chunk.mesh.Clear();
         chunk.mesh.SetVertices(verticies);

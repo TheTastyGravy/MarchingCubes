@@ -57,6 +57,11 @@ public class FlatArray3D<T>
         get { return m_array[(x * m_size.y + y) * m_size.z + z]; }
         set { m_array[(x * m_size.y + y) * m_size.z + z] = value; }
     }
+    public T this[uint x, uint y, uint z]
+    {
+        get { return m_array[(x * m_size.y + y) * m_size.z + z]; }
+        set { m_array[(x * m_size.y + y) * m_size.z + z] = value; }
+    }
     public T this[Vector3Int i]
     {
         get { return m_array[(i.x * m_size.y + i.y) * m_size.z + i.z]; }
@@ -66,6 +71,29 @@ public class FlatArray3D<T>
     {
         get { return m_array[i]; }
         set { m_array[i] = value; }
+    }
+    public T this[uint i]
+    {
+        get { return m_array[i]; }
+        set { m_array[i] = value; }
+    }
+
+    /// <summary>
+    /// Copy all values from the target to this array. If the arrays are of different size, only the values within range will be used
+    /// </summary>
+    /// <param name="target">Array to copy values from</param>
+    public void CopyValuesFrom(FlatArray3D<T> target)
+    {
+        for (uint x = 0; x < m_size.x && x < target.Size.x; x++)
+        {
+            for (uint y = 0; y < m_size.y && y < target.Size.y; y++)
+            {
+                for (uint z = 0; z < m_size.z && z < target.Size.z; z++)
+                {
+                    m_array[(x * m_size.y + y) * m_size.z + z] = target[x, y, z];
+                }
+            }
+        }
     }
 
     [SerializeField, HideInInspector]
