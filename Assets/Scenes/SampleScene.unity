@@ -16569,8 +16569,8 @@ MonoBehaviour:
     meshObject: {fileID: 1759463335}
     meshFilter: {fileID: 1759463336}
     mesh: {fileID: 793029815}
+  meshMaterial: {fileID: 2100000, guid: a9339a3d920ebb94fa6c82c1e3368ec1, type: 2}
   chunkCount: {x: 2, y: 2}
-  material: {fileID: 2100000, guid: a9339a3d920ebb94fa6c82c1e3368ec1, type: 2}
   generate: 0
   setValues: 0
   surface: 0.55

@@ -48,4 +48,12 @@ public class Utility
         float t = useSmoothing ? (surfaceLevel - v1.w) / (v2.w - v1.w) : 0.5f;
         return v1 + (v2 - v1) * t;
     }
+
+    /// <summary>
+    /// Wrapper for Debug.LogWarning with additional formatting
+    /// </summary>
+    internal static void PrintWarning(string message)
+    {
+        Debug.LogWarning("MARCHING_CUBES: " + message);
+    }
 }

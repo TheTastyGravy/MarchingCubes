@@ -7,17 +7,16 @@ using UnityEditor;
 
 public class VoxelMap : MonoBehaviour
 {
-    public List<Chunk> chunks = new List<Chunk>();
-
-    //temp
-    public Vector2Int chunkCount = Vector2Int.zero;
-
-    public Material material;
-
-    // Size of chunk node array
+    // Size of chunk's node array
     public const int ChunkSize = 16;
 
+    [SerializeField, HideInInspector]
+    private List<Chunk> chunks = new List<Chunk>();
+    public Material meshMaterial;
+
+    //temp
     [Space]
+    public Vector2Int chunkCount = Vector2Int.zero;
     public bool generate = false;
     public bool setValues = false;
     public float surface = 0.5f;
@@ -29,21 +28,28 @@ public class VoxelMap : MonoBehaviour
 
 
 
-    public Chunk GetChunk(Vector3Int index)
+    public Chunk GetChunk(Vector3Int position)
     {
-        return chunks.Find((Chunk chunk) => chunk.position == index);
+        return chunks.Find((Chunk chunk) => chunk.position == position);
     }
 
-    public bool ChunkExists(Vector3Int index)
+    public bool ChunkExists(Vector3Int position)
     {
-        return chunks.Exists((Chunk chunk) => chunk.position == index);
+        return chunks.Exists((Chunk chunk) => chunk.position == position);
     }
 
-
-    public void SetupChunk(Vector3Int position)
+    /// <summary>
+    /// Create a new chunk at a position
+    /// </summary>
+    /// <param name="position">The position to create the chunk in</param>
+    /// <returns>The new chunk. If a chunk alrady exists at the position, returns null</returns>
+    public Chunk CreateChunk(Vector3Int position)
     {
         if (ChunkExists(position))
-            return;
+        {
+            Utility.PrintWarning("Attempted to create a chunk in a used position");
+            return null;
+        }
 
         Chunk newChunk = new Chunk();
         newChunk.nodes = new FlatArray3D<Node>(ChunkSize, ChunkSize, ChunkSize);
@@ -59,21 +65,32 @@ public class VoxelMap : MonoBehaviour
         newChunk.meshFilter = newChunk.meshObject.AddComponent<MeshFilter>();
         newChunk.meshFilter.mesh = newChunk.mesh;
         MeshRenderer newRenderer = newChunk.meshObject.AddComponent<MeshRenderer>();
-        newRenderer.sharedMaterial = material;
+        newRenderer.sharedMaterial = meshMaterial;
 
         chunks.Add(newChunk);
+        return newChunk;
     }
 
     public void DestroyChunk(Vector3Int position)
     {
-        if (!ChunkExists(position))
-            return;
-
         Chunk chunk = GetChunk(position);
+        DestroyChunk(chunk);
+    }
+
+    public void DestroyChunk(Chunk chunk)
+    {
+        // Check we own this chunk
+        if (chunk == null || !chunks.Contains(chunk))
+        {
+            Utility.PrintWarning("Attempted to destroy chunk that does not exist or belong to this map");
+            return;
+        }
+
         chunks.Remove(chunk);
 
         chunk.mesh.Clear();
 #if UNITY_EDITOR
+        // Work around to allow objects to be destroyed in editor
         IEnumerator DelayedDestroy(GameObject obj)
         {
             yield return null;
@@ -88,17 +105,27 @@ public class VoxelMap : MonoBehaviour
 #endif
     }
 
-
-    private void UpdateAllChunks()
+    /// <summary>
+    /// Update a chunks mesh
+    /// </summary>
+    public void UpdateChunk(Vector3Int position)
     {
-        foreach (Chunk chunk in chunks)
-        {
-            UpdateChunk(chunk);
-        }
+        Chunk chunk = GetChunk(position);
+        UpdateChunk(chunk);
     }
 
-    private void UpdateChunk(Chunk chunk)
+    /// <summary>
+    /// Update a chunks mesh
+    /// </summary>
+    public void UpdateChunk(Chunk chunk)
     {
+        // Check we own this chunk
+        if (chunk == null || !chunks.Contains(chunk))
+        {
+            Utility.PrintWarning("Attempted to update chunk that does not exist or belong to this map");
+            return;
+        }
+
         List<Vector3> verticies = new List<Vector3>();
         List<int> triangles = new List<int>();
         MarchingCubes.MarchCubes(chunk, surface, smooth, verticies, triangles);
@@ -110,6 +137,15 @@ public class VoxelMap : MonoBehaviour
     }
 
 
+    private void UpdateAllChunks()
+    {
+        foreach (Chunk chunk in chunks)
+        {
+            UpdateChunk(chunk);
+        }
+    }
+
+
     //temp func. node data would be set by user
     private void SetValuesForAllChunks()
     {
@@ -118,7 +154,7 @@ public class VoxelMap : MonoBehaviour
         {
             for (int y = 0; y < chunkCount.y; y++)
             {
-                SetupChunk(new Vector3Int(x, y, 0));
+                CreateChunk(new Vector3Int(x, y, 0));
                 SetChunkNodeValues(new Vector3Int(x, y, 0), offset);
             }
         }
