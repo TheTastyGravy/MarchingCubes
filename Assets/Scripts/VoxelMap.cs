@@ -1,10 +1,11 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 
+[ExecuteInEditMode]
 public class VoxelMap : MonoBehaviour
 {
     // Size of chunk's node array
@@ -25,6 +26,8 @@ public class VoxelMap : MonoBehaviour
 
     [SerializeField, HideInInspector]
     private bool currentSmooth;
+
+    public Transform rayCastObj;
 
 
 
@@ -172,6 +175,206 @@ public class VoxelMap : MonoBehaviour
     }
 
 
+    public void Raycast(Vector3 origin, Vector3 direction)
+    {
+        // Instead of testing against every triangle in every chunk, we determine what voxels the 
+        // ray passes through and only check if the ray hits the triangles in those. The method 
+        // used to find what voxels the ray passes through is described here:
+        // https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf
+
+        // Get ray in local space
+        origin = transform.worldToLocalMatrix * origin;
+        direction = transform.worldToLocalMatrix * direction;
+        // Used to find tMax
+        float Frac(float f, int s)
+        {
+            if (s > 0)
+                return 1 - f + Mathf.Floor(f);
+            else
+                return f - Mathf.Floor(f);
+        }
+
+        // Voxel index
+        Vector3Int index = new Vector3Int(Mathf.FloorToInt(origin.x) % ChunkSize,
+                                          Mathf.FloorToInt(origin.y) % ChunkSize,
+                                          Mathf.FloorToInt(origin.z) % ChunkSize);
+        // Used to increment index
+        Vector3Int step = new Vector3Int(System.Math.Sign(direction.x),
+                                         System.Math.Sign(direction.y),
+                                         System.Math.Sign(direction.z));
+        // Units of t between edges of cell, ie how much time it takes to travel in each direction
+        Vector3 tDelta = new Vector3(1f / Mathf.Abs(direction.x), 1f / Mathf.Abs(direction.y), 1f / Mathf.Abs(direction.z));
+        // Position to start checking voxels with
+        Vector3 startPos = origin;
+
+
+        // Get the chunk. If its not at the ray origin, find the first one the ray intersects
+        Vector3Int chunkPos = new Vector3Int(Mathf.FloorToInt(origin.x / ChunkSize), 
+                                             Mathf.FloorToInt(origin.y / ChunkSize), 
+                                             Mathf.FloorToInt(origin.z / ChunkSize));
+        Chunk chunk = GetChunk(chunkPos);
+        if (chunk == null)
+        {
+            // Use the same voxel traversal algorithm, tracking the last axis used
+            int axis = 0;
+            Vector3 tMaxChunk = new Vector3(Frac(origin.x / ChunkSize, step.x), Frac(origin.y / ChunkSize, step.y), Frac(origin.z / ChunkSize, step.z));
+            tMaxChunk.Scale(tDelta);
+            for (int i = 0; i < 10 && chunk == null; i++)
+            {
+                if (tMaxChunk.x < tMaxChunk.y)
+                {
+                    if (tMaxChunk.x < tMaxChunk.z)
+                    {
+                        chunkPos.x += step.x;
+                        tMaxChunk.x += tDelta.x;
+                        axis = 0;
+                    }
+                    else
+                    {
+                        chunkPos.z += step.z;
+                        tMaxChunk.z += tDelta.z;
+                        axis = 2;
+                    }
+                }
+                else
+                {
+                    if (tMaxChunk.y < tMaxChunk.z)
+                    {
+                        chunkPos.y += step.y;
+                        tMaxChunk.y += tDelta.y;
+                        axis = 1;
+                    }
+                    else
+                    {
+                        chunkPos.z += step.z;
+                        tMaxChunk.z += tDelta.z;
+                        axis = 2;
+                    }
+                }
+                chunk = GetChunk(chunkPos);
+            }
+            if (chunk == null)
+            {
+                //Utility.PrintWarning("Raycast does not intersect with any chunks");
+                return;
+            }
+
+            // Find intersection point with axis aligned plane
+            float dist = chunk.position[axis] * ChunkSize + (step[axis] > 0 ? 0 : ChunkSize);
+            dist = (dist - origin[axis]) / direction[axis];
+            startPos = origin + direction * dist;
+            index = new Vector3Int(Mathf.FloorToInt(startPos.x) % ChunkSize,
+                                   Mathf.FloorToInt(startPos.y) % ChunkSize,
+                                   Mathf.FloorToInt(startPos.z) % ChunkSize);
+            // If on the negitive edge, move inside its bounds
+            if (step[axis] < 0)
+            {
+                index[axis] = ChunkSize - 1;
+                startPos[axis] -= 0.001f;
+            }
+        }
+
+
+        // Search each voxel the ray passes through until we find a collision or there is no neighbouring chunk
+        Vector3 tMax = new Vector3(Frac(startPos.x, step.x), Frac(startPos.y, step.y), Frac(startPos.z, step.z));
+        tMax.Scale(tDelta);
+        while (chunk != null)
+        {
+            debugList.Add(chunk.position * ChunkSize + index);
+
+            //check for collision in voxel
+            //note: we assume that the chunk has its edges filled, ie it has neighbours
+            //if there is no neighbour, treat the cell as empty
+
+            // Increment index
+            if (tMax.x < tMax.y)
+            {
+                if (tMax.x < tMax.z)
+                {
+                    index.x += step.x;
+                    tMax.x += tDelta.x;
+                }
+                else
+                {
+                    index.z += step.z;
+                    tMax.z += tDelta.z;
+                }
+            }
+            else
+            {
+                if (tMax.y < tMax.z)
+                {
+                    index.y += step.y;
+                    tMax.y += tDelta.y;
+                }
+                else
+                {
+                    index.z += step.z;
+                    tMax.z += tDelta.z;
+                }
+            }
+
+            // If we have reached the end of the chunk, get the next chunk
+            if (index.x >= ChunkSize || index.x < 0 ||
+                index.y >= ChunkSize || index.y < 0 ||
+                index.z >= ChunkSize || index.z < 0)
+            {
+                if (index.x < 0)
+                {
+                    index.x = ChunkSize - 1;
+                    chunkPos.x += step.x;
+                }
+                if (index.x >= ChunkSize)
+                {
+                    index.x = 0;
+                    chunkPos.x += step.x;
+                }
+                if (index.y < 0)
+                {
+                    index.y = ChunkSize - 1;
+                    chunkPos.y += step.y;
+                }
+                if (index.y >= ChunkSize)
+                {
+                    index.y = 0;
+                    chunkPos.y += step.y;
+                }
+                if (index.z < 0)
+                {
+                    index.z = ChunkSize - 1;
+                    chunkPos.z += step.z;
+                }
+                if (index.z >= ChunkSize)
+                {
+                    index.z = 0;
+                    chunkPos.z += step.z;
+                }
+                chunk = GetChunk(chunkPos);
+            }
+        }
+
+
+        Debug.DrawRay(origin, direction * 35, Color.red, 0.001f);
+        // Draw cross at origin point
+        float mult = 0.3f;
+        Debug.DrawLine(startPos + mult * Vector3.up, startPos - mult * Vector3.up, Color.blue, 0.001f);
+        Debug.DrawLine(startPos + mult * Vector3.right, startPos - mult * Vector3.right, Color.blue, 0.001f);
+        Debug.DrawLine(startPos + mult * Vector3.forward, startPos - mult * Vector3.forward, Color.blue, 0.001f);
+    }
+
+    public List<Vector3> debugList = new List<Vector3>();
+
+    private void OnDrawGizmos()
+    {
+        Color oldColor = Gizmos.color;
+        Gizmos.color = new Color(0, 1, 0, 0.2f);
+        foreach (var obj in debugList)
+        {
+            Gizmos.DrawCube(obj + new Vector3(0.5f,0.5f,0.5f), Vector3.one);
+        }
+        Gizmos.color = oldColor;
+    }
+
 
     private void OnValidate()
     {
@@ -197,6 +400,15 @@ public class VoxelMap : MonoBehaviour
         {
             currentSmooth = smooth;
             UpdateAllChunks();
+        }
+    }
+
+    private void Update()
+    {
+        if (rayCastObj != null)
+        {
+            debugList.Clear();
+            Raycast(rayCastObj.position, rayCastObj.forward);
         }
     }
 
@@ -234,27 +446,3 @@ public class VoxelMap : MonoBehaviour
         }
     }
 }
-
-#if UNITY_EDITOR
-//[CustomEditor(typeof(NodeMap))]
-//public class NodeMapEditor : Editor
-//{
-//    [DrawGizmo(GizmoType.Selected | GizmoType.NonSelected)]
-//    public static void DrawPoints(NodeMap target, GizmoType gizmoType)
-//    {
-//        if (target.nodes == null)
-//            return;
-//
-//        for (int x = 0; x < target.nodes.GetLength(0); x++)
-//        {
-//            for (int y = 0; y < target.nodes.GetLength(1); y++)
-//            {
-//                for (int z = 0; z < target.nodes.GetLength(2); z++)
-//                {
-//                    Gizmos.DrawIcon(new Vector3(x, y, z), "DotFill.tif", true, new Color(target.nodes[x, y, z].isoValue, target.nodes[x, y, z].isoValue, target.nodes[x, y, z].isoValue));
-//                }
-//            }
-//        }
-//    }
-//}
-#endif //UNITY_EDITOR
