@@ -1,2 +1,2 @@
-# MarchingCubes
-Implementation of marching cubes in Unity
+# Marching Cubes
+This project is early work in progress
