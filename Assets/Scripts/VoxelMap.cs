@@ -23,9 +23,12 @@ public class VoxelMap : MonoBehaviour
     public float surface = 0.5f;
     public float noiseSize = 1;
     public bool smooth;
+    public bool useCustomNormals;
 
     [SerializeField, HideInInspector]
     private bool currentSmooth;
+    [SerializeField, HideInInspector]
+    private bool currentNormals;
 
     public Transform rayCastObj;
 
@@ -54,7 +57,8 @@ public class VoxelMap : MonoBehaviour
     {
         if (ChunkExists(position))
         {
-            Utility.PrintWarning("Attempted to create a chunk in a used position");
+            if (drawDebug)
+                Utility.PrintWarning("Attempted to create a chunk in a used position");
             return null;
         }
 
@@ -89,7 +93,8 @@ public class VoxelMap : MonoBehaviour
         // Check we own this chunk
         if (chunk == null || !chunks.Contains(chunk))
         {
-            Utility.PrintWarning("Attempted to destroy chunk that does not exist or belong to this map");
+            if (drawDebug)
+                Utility.PrintWarning("Attempted to destroy chunk that does not exist or belong to this map");
             return;
         }
 
@@ -129,18 +134,23 @@ public class VoxelMap : MonoBehaviour
         // Check we own this chunk
         if (chunk == null || !chunks.Contains(chunk))
         {
-            Utility.PrintWarning("Attempted to update chunk that does not exist or belong to this map");
+            if (drawDebug)
+                Utility.PrintWarning("Attempted to update chunk that does not exist or belong to this map");
             return;
         }
 
         List<Vector3> verticies = new List<Vector3>();
         List<int> triangles = new List<int>();
-        MarchingCubes.MarchCubes(chunk, surface, smooth, verticies, triangles);
+        List<Vector3> normals = new List<Vector3>();
+        MarchingCubes.MarchCubes(chunk, surface, smooth, verticies, triangles, normals);
 
         chunk.mesh.Clear();
         chunk.mesh.SetVertices(verticies);
         chunk.mesh.SetTriangles(triangles, 0);
-        chunk.mesh.RecalculateNormals();
+        if (useCustomNormals)
+            chunk.mesh.SetNormals(normals);
+        else
+            chunk.mesh.RecalculateNormals();
     }
 
 
@@ -507,6 +517,12 @@ public class VoxelMap : MonoBehaviour
         if (smooth != currentSmooth)
         {
             currentSmooth = smooth;
+            UpdateAllChunks();
+        }
+
+        if (useCustomNormals != currentNormals)
+        {
+            currentNormals = useCustomNormals;
             UpdateAllChunks();
         }
     }
