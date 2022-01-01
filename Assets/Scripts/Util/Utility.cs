@@ -50,6 +50,64 @@ public class Utility
     }
 
     /// <summary>
+    /// Ray-triangle intersection test using the Möller–Trumbore intersection algorithm
+    /// </summary>
+    /// <param name="triangle">Array of 3 verticies</param>
+    /// <param name="intersect">The point that the ray hits the triangle. Zero if it misses</param>
+    /// <returns>Has the ray hit the triangle?</returns>
+    public static bool RayTriangleIntersect(Vector3 rayOrigin, Vector3 rayDirection, Vector3[] triangle, out Vector3 intersect)
+    {
+        const float EPSILON = 0.0000001f;
+        Vector3 vertex0 = triangle[0];
+        Vector3 vertex1 = triangle[1];
+        Vector3 vertex2 = triangle[2];
+
+        Vector3 edge1 = vertex1 - vertex0;
+        Vector3 edge2 = vertex2 - vertex0;
+        Vector3 h = Vector3.Cross(rayDirection, edge2);
+        float a = Vector3.Dot(edge1, h);
+
+        if (a > -EPSILON && a < EPSILON)
+        {
+            intersect = Vector3.zero;
+            return false;    // This ray is parallel to this triangle.
+        }
+
+        float f = 1f / a;
+        Vector3 s = rayOrigin - vertex0;
+        float u = f * Vector3.Dot(s, h);
+
+        if (u < 0.0 || u > 1.0)
+        {
+            intersect = Vector3.zero;
+            return false;
+        }
+        
+        Vector3 q = Vector3.Cross(s, edge1);
+        float v = f * Vector3.Dot(rayDirection, q);
+
+        if (v < 0f || u + v > 1f)
+        {
+            intersect = Vector3.zero;
+            return false;
+        }
+        
+        // At this stage we can compute t to find out where the intersection point is on the line.
+        float t = f * Vector3.Dot(edge2, q);
+        
+        if (t > EPSILON) // ray intersection
+        {
+            intersect = rayOrigin + rayDirection * t;
+            return true;
+        }
+        else // This means that there is a line intersection but not a ray intersection.
+        {
+            intersect = Vector3.zero;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Wrapper for Debug.LogWarning with additional formatting
     /// </summary>
     internal static void PrintWarning(string message)

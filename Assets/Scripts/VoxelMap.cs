@@ -29,6 +29,10 @@ public class VoxelMap : MonoBehaviour
 
     public Transform rayCastObj;
 
+    public bool drawDebug = false;
+    [SerializeField, HideInInspector]
+    public List<Vector3> debugList = new List<Vector3>();
+
 
 
     public Chunk GetChunk(Vector3Int position)
@@ -174,8 +178,24 @@ public class VoxelMap : MonoBehaviour
         chunks.Clear();
     }
 
+    /// <summary>
+    /// Optimised raycast for generated mesh
+    /// </summary>
+    /// <param name="origin">Ray origin</param>
+    /// <param name="direction">Ray direction. Should be normilized</param>
+    /// <returns>Does the ray hit anything?</returns>
+    public bool Raycast(Vector3 origin, Vector3 direction)
+    {
+        return Raycast(origin, direction, out Vector3 _);
+    }
 
-    public void Raycast(Vector3 origin, Vector3 direction)
+    /// <summary>
+    /// Optimised raycast for generated mesh
+    /// </summary>
+    /// <param name="origin">Ray origin</param>
+    /// <param name="direction">Ray direction. Should be normilized</param>
+    /// <returns>Does the ray hit anything?</returns>
+    public bool Raycast(Vector3 origin, Vector3 direction, out Vector3 intersectionPoint)
     {
         // Instead of testing against every triangle in every chunk, we determine what voxels the 
         // ray passes through and only check if the ray hits the triangles in those. The method 
@@ -255,8 +275,8 @@ public class VoxelMap : MonoBehaviour
             }
             if (chunk == null)
             {
-                //Utility.PrintWarning("Raycast does not intersect with any chunks");
-                return;
+                intersectionPoint = Vector3.zero;
+                return false;
             }
 
             // Find intersection point with axis aligned plane
@@ -274,17 +294,109 @@ public class VoxelMap : MonoBehaviour
             }
         }
 
+        if (drawDebug)
+        {
+            // Draw cross at origin point
+            float mult = 0.3f;
+            Debug.DrawLine(startPos + mult * Vector3.up, startPos - mult * Vector3.up, Color.blue, 0.001f);
+            Debug.DrawLine(startPos + mult * Vector3.right, startPos - mult * Vector3.right, Color.blue, 0.001f);
+            Debug.DrawLine(startPos + mult * Vector3.forward, startPos - mult * Vector3.forward, Color.blue, 0.001f);
+        }
+        
 
+        bool isCubeValid = true;
+        Vector4 CreateCorner(int x, int y, int z)
+        {
+            // Not an edge so we can use the current chunk
+            if (x < ChunkSize && y < ChunkSize && z < ChunkSize)
+                return new Vector4(x, y, z, chunk.nodes[x, y, z].isoValue);
+
+            // A nessesary neighbour doesnt exist, so dont try
+            if (!isCubeValid)
+                return Vector4.zero;
+
+            Vector4 result = new Vector4(x, y, z, 0);
+            // Check if we need to get a neighbouring chunk
+            Vector3Int chunkIndex = chunk.position;
+            if (x == ChunkSize)
+            {
+                chunkIndex.x++;
+                x = 0;
+            }
+            if (y == ChunkSize)
+            {
+                chunkIndex.y++;
+                y = 0;
+            }
+            if (z == ChunkSize)
+            {
+                chunkIndex.z++;
+                z = 0;
+            }
+
+            if (chunkIndex == chunk.position)
+            {
+                result.w = chunk.nodes[x, y, z].isoValue;
+            }
+            else
+            {
+                // Use the neighbour chunk
+                Chunk current = GetChunk(chunkIndex);
+                if (current == null)
+                    isCubeValid = false;
+                else
+                    result.w = current.nodes[x, y, z].isoValue;
+            }
+            return result;
+        }
+
+        // For marching cubes
+        Vector4[] voxel = new Vector4[8];
+        List<Vector3> verticies = new List<Vector3>();
+        List<int> triangles = new List<int>();
+        // For ray-tri intersection
+        Vector3[] tri = new Vector3[3];
         // Search each voxel the ray passes through until we find a collision or there is no neighbouring chunk
         Vector3 tMax = new Vector3(Frac(startPos.x, step.x), Frac(startPos.y, step.y), Frac(startPos.z, step.z));
         tMax.Scale(tDelta);
         while (chunk != null)
         {
-            debugList.Add(chunk.position * ChunkSize + index);
+            if (drawDebug)
+                debugList.Add(chunk.position * ChunkSize + index);
 
-            //check for collision in voxel
-            //note: we assume that the chunk has its edges filled, ie it has neighbours
-            //if there is no neighbour, treat the cell as empty
+            // Construct voxel to generate mesh data
+            isCubeValid = true;
+            voxel[0] = CreateCorner(index.x, index.y, index.z + 1);
+            voxel[1] = CreateCorner(index.x + 1, index.y, index.z + 1);
+            voxel[2] = CreateCorner(index.x + 1, index.y, index.z);
+            voxel[3] = CreateCorner(index.x, index.y, index.z);
+            voxel[4] = CreateCorner(index.x, index.y + 1, index.z + 1);
+            voxel[5] = CreateCorner(index.x + 1, index.y + 1, index.z + 1);
+            voxel[6] = CreateCorner(index.x + 1, index.y + 1, index.z);
+            voxel[7] = CreateCorner(index.x, index.y + 1, index.z);
+            if (isCubeValid)
+            {
+                verticies.Clear();
+                triangles.Clear();
+                MarchingCubes.ProcessCube(voxel, verticies, triangles, surface, smooth);
+                if (verticies.Count > 0)
+                {
+                    // Check for intersection with each triangle
+                    for (int i = 0; i < triangles.Count; i += 3)
+                    {
+                        tri[0] = verticies[triangles[i + 0]] + chunkPos * ChunkSize;
+                        tri[1] = verticies[triangles[i + 1]] + chunkPos * ChunkSize;
+                        tri[2] = verticies[triangles[i + 2]] + chunkPos * ChunkSize;
+                        if (Utility.RayTriangleIntersect(origin, direction, tri, out Vector3 intersect))
+                        {
+                            intersectionPoint = transform.worldToLocalMatrix * intersect;
+                            if (drawDebug)
+                                Debug.DrawLine(origin, intersectionPoint, Color.green, 0.001f);
+                            return true;
+                        }
+                    }
+                }
+            }
 
             // Increment index
             if (tMax.x < tMax.y)
@@ -353,16 +465,12 @@ public class VoxelMap : MonoBehaviour
             }
         }
 
-
-        Debug.DrawRay(origin, direction * 35, Color.red, 0.001f);
-        // Draw cross at origin point
-        float mult = 0.3f;
-        Debug.DrawLine(startPos + mult * Vector3.up, startPos - mult * Vector3.up, Color.blue, 0.001f);
-        Debug.DrawLine(startPos + mult * Vector3.right, startPos - mult * Vector3.right, Color.blue, 0.001f);
-        Debug.DrawLine(startPos + mult * Vector3.forward, startPos - mult * Vector3.forward, Color.blue, 0.001f);
+        // The ray has hit nothing
+        if (drawDebug)
+            Debug.DrawLine(origin, origin + direction * 50, Color.red, 0.001f);
+        intersectionPoint = chunkPos * ChunkSize + index;
+        return false;
     }
-
-    public List<Vector3> debugList = new List<Vector3>();
 
     private void OnDrawGizmos()
     {
