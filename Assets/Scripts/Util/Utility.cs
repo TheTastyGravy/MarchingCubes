@@ -21,19 +21,76 @@ public class Chunk
     public Mesh mesh;
 }
 
+public class Voxel
+{
+    public Voxel()
+    {
+        m_verticies = new Node[8];
+    }
+
+    /// <summary>
+    /// Setup/Reset the voxel for new values
+    /// </summary>
+    /// <param name="baseIndex">The origin index for the voxel</param>
+    public void Setup(Vector3Int baseIndex)
+    {
+        m_baseIndex = baseIndex;
+        for (int i = 0; i < 8; i++)
+            m_verticies[i] = null;
+    }
+
+    public Node this[int i]
+    {
+        get { return m_verticies[i]; }
+        set { m_verticies[i] = value; }
+    }
+
+    /// <summary>
+    /// Get the index for vertex i
+    /// </summary>
+    public Vector3Int Pos(int i)
+    {
+        if (i < 0 || i > 7)
+            return Vector3Int.zero;
+        Vector3Int res = m_baseIndex;
+        if (i >= 4)
+        {
+            res.y += 1;
+            i %= 4;
+        }
+        if (i < 2)
+            res.z += 1;
+        if (i == 1 || i == 2)
+            res.x += 1;
+        return res;
+    }
+
+    /// <summary>
+    /// Get vertex i as a Vector4. [x, y, z, iso]
+    /// </summary>
+    public Vector4 GetVertex(int i)
+    {
+        Vector3Int pos = Pos(i);
+        return new Vector4(pos.x, pos.y, pos.z, this[i].isoValue);
+    }
+
+    private Vector3Int m_baseIndex;
+    private Node[] m_verticies;
+}
+
 public class Utility
 {
-    public static int GetCubeIndex(in Vector4[] cube, float surfaceLevel)
+    public static int GetCubeIndex(Voxel cube, float surfaceLevel)
     {
         int cubeIndex = 0;
-        if (cube[0].w <= surfaceLevel) cubeIndex |= 1;
-        if (cube[1].w <= surfaceLevel) cubeIndex |= 2;
-        if (cube[2].w <= surfaceLevel) cubeIndex |= 4;
-        if (cube[3].w <= surfaceLevel) cubeIndex |= 8;
-        if (cube[4].w <= surfaceLevel) cubeIndex |= 16;
-        if (cube[5].w <= surfaceLevel) cubeIndex |= 32;
-        if (cube[6].w <= surfaceLevel) cubeIndex |= 64;
-        if (cube[7].w <= surfaceLevel) cubeIndex |= 128;
+        if (cube[0].isoValue <= surfaceLevel) cubeIndex |= 1;
+        if (cube[1].isoValue <= surfaceLevel) cubeIndex |= 2;
+        if (cube[2].isoValue <= surfaceLevel) cubeIndex |= 4;
+        if (cube[3].isoValue <= surfaceLevel) cubeIndex |= 8;
+        if (cube[4].isoValue <= surfaceLevel) cubeIndex |= 16;
+        if (cube[5].isoValue <= surfaceLevel) cubeIndex |= 32;
+        if (cube[6].isoValue <= surfaceLevel) cubeIndex |= 64;
+        if (cube[7].isoValue <= surfaceLevel) cubeIndex |= 128;
         return cubeIndex;
     }
 
@@ -47,6 +104,56 @@ public class Utility
     {
         float t = useSmoothing ? (surfaceLevel - v1.w) / (v2.w - v1.w) : 0.5f;
         return v1 + (v2 - v1) * t;
+    }
+
+    /// <summary>
+    /// Get the node at [x, y, z] relitive to chunk. If the index is outside the chunk, its neighbours will be used
+    /// </summary>
+    /// <returns>The node at the index, or null if it doesnt exist</returns>
+    public static Node GetValue(Chunk chunk, int x, int y, int z)
+    {
+        Vector3Int size = chunk.nodes.Size;
+        if (x >= 0 && y >= 0 && z >= 0 && x < size.x && y < size.y && z < size.z)
+            return chunk.nodes[x, y, z];
+
+        Vector3Int chunkIndex = Vector3Int.zero;
+        if (x >= size.x)
+        {
+            chunkIndex.x = 1;
+            x -= size.x;
+        }
+        if (y >= size.y)
+        {
+            chunkIndex.y = 1;
+            y -= size.y;
+        }
+        if (z >= size.z)
+        {
+            chunkIndex.z = 1;
+            z -= size.z;
+        }
+        if (x < 0)
+        {
+            chunkIndex.x = -1;
+            x += size.x;
+        }
+        if (y < 0)
+        {
+            chunkIndex.y = -1;
+            y += size.y;
+        }
+        if (z < 0)
+        {
+            chunkIndex.z = -1;
+            z += size.z;
+        }
+        
+        // Use the neighbour chunk
+        Chunk current = chunk.map.GetChunk(chunk.position + chunkIndex);
+        if (current == null)
+            return null;
+        else
+            return current.nodes[x, y, z];
     }
 
     /// <summary>

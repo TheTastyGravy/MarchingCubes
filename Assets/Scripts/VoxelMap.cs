@@ -312,56 +312,11 @@ public class VoxelMap : MonoBehaviour
             Debug.DrawLine(startPos + mult * Vector3.right, startPos - mult * Vector3.right, Color.blue, 0.001f);
             Debug.DrawLine(startPos + mult * Vector3.forward, startPos - mult * Vector3.forward, Color.blue, 0.001f);
         }
-        
 
-        bool isCubeValid = true;
-        Vector4 CreateCorner(int x, int y, int z)
-        {
-            // Not an edge so we can use the current chunk
-            if (x < ChunkSize && y < ChunkSize && z < ChunkSize)
-                return new Vector4(x, y, z, chunk.nodes[x, y, z].isoValue);
-
-            // A nessesary neighbour doesnt exist, so dont try
-            if (!isCubeValid)
-                return Vector4.zero;
-
-            Vector4 result = new Vector4(x, y, z, 0);
-            // Check if we need to get a neighbouring chunk
-            Vector3Int chunkIndex = chunk.position;
-            if (x == ChunkSize)
-            {
-                chunkIndex.x++;
-                x = 0;
-            }
-            if (y == ChunkSize)
-            {
-                chunkIndex.y++;
-                y = 0;
-            }
-            if (z == ChunkSize)
-            {
-                chunkIndex.z++;
-                z = 0;
-            }
-
-            if (chunkIndex == chunk.position)
-            {
-                result.w = chunk.nodes[x, y, z].isoValue;
-            }
-            else
-            {
-                // Use the neighbour chunk
-                Chunk current = GetChunk(chunkIndex);
-                if (current == null)
-                    isCubeValid = false;
-                else
-                    result.w = current.nodes[x, y, z].isoValue;
-            }
-            return result;
-        }
 
         // For marching cubes
-        Vector4[] voxel = new Vector4[8];
+        bool isCubeValid;
+        Voxel voxel = new Voxel();
         List<Vector3> verticies = new List<Vector3>();
         List<int> triangles = new List<int>();
         // For ray-tri intersection
@@ -376,14 +331,18 @@ public class VoxelMap : MonoBehaviour
 
             // Construct voxel to generate mesh data
             isCubeValid = true;
-            voxel[0] = CreateCorner(index.x, index.y, index.z + 1);
-            voxel[1] = CreateCorner(index.x + 1, index.y, index.z + 1);
-            voxel[2] = CreateCorner(index.x + 1, index.y, index.z);
-            voxel[3] = CreateCorner(index.x, index.y, index.z);
-            voxel[4] = CreateCorner(index.x, index.y + 1, index.z + 1);
-            voxel[5] = CreateCorner(index.x + 1, index.y + 1, index.z + 1);
-            voxel[6] = CreateCorner(index.x + 1, index.y + 1, index.z);
-            voxel[7] = CreateCorner(index.x, index.y + 1, index.z);
+            voxel.Setup(index);
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3Int p = voxel.Pos(i);
+                voxel[i] = Utility.GetValue(chunk, p.x, p.y, p.z);
+                if (voxel[i] == null)
+                {
+                    isCubeValid = false;
+                    break;
+                }
+            }
+
             if (isCubeValid)
             {
                 verticies.Clear();

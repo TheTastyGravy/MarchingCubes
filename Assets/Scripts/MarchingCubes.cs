@@ -11,10 +11,12 @@ public class MarchingCubes
     /// <param name="useSmoothing">Should interpolation be used?</param>
     /// <param name="verticies"></param>
     /// <param name="triangles"></param>
+    /// <param name="normals"></param>
     public static void MarchCubes(Chunk chunk, float surfaceLevel, bool useSmoothing, List<Vector3> verticies, List<int> triangles, List<Vector3> normals)
     {
         Vector3Int size = chunk.nodes.Size;
         bool isCubeValid;
+        Voxel voxel = new Voxel();
         // Vertex caches. They are indexed using a nodes X and Z position, and are reset after each layer (Y axis)
         FlatArray3D<int> topCache = new FlatArray3D<int>(size.y + 1, size.z + 1, 3);
         FlatArray3D<int> bottomCache = new FlatArray3D<int>(size.y + 1, size.z + 1, 3);
@@ -31,77 +33,21 @@ public class MarchingCubes
                 for (int z = 0; z < size.z; z++)
                 {
                     isCubeValid = true;
-                    float GetValue(int x, int y, int z)
+                    voxel.Setup(new Vector3Int(x,y,z));
+                    for (int i = 0; i < 8; i++)
                     {
-                        if (x >= 0 && y >= 0 && z >= 0 && x < size.x && y < size.y && z < size.z)
-                            return chunk.nodes[x, y, z].isoValue;
-                        
-                        Vector3Int chunkIndex = Vector3Int.zero;
-                        if (x >= size.x)
-                        {
-                            chunkIndex.x = 1;
-                            x -= size.x;
-                        }
-                        if (y >= size.y)
-                        {
-                            chunkIndex.y = 1;
-                            y -= size.y;
-                        }
-                        if (z >= size.z)
-                        {
-                            chunkIndex.z = 1;
-                            z -= size.z;
-                        }
-                        if (x < 0)
-                        {
-                            chunkIndex.x = -1;
-                            x += size.x;
-                        }
-                        if (y < 0)
-                        {
-                            chunkIndex.y = -1;
-                            y += size.y;
-                        }
-                        if (z < 0)
-                        {
-                            chunkIndex.z = -1;
-                            z += size.z;
-                        }
-
-                        // Use the neighbour chunk
-                        Chunk current = chunk.map.GetChunk(chunk.position + chunkIndex);
-                        if (current == null)
-                            return -1;
-                        else
-                            return current.nodes[x, y, z].isoValue;
-                    }
-                    // x, y, z, node value
-                    Vector4 CreateCubeCorner(int x, int y, int z)
-                    {
-                        float value = GetValue(x, y, z);
-                        if (value != -1)
-                            return new Vector4(x, y, z, value);
-                        else
+                        Vector3Int p = voxel.Pos(i);
+                        voxel[i] = Utility.GetValue(chunk, p.x, p.y, p.z);
+                        if (voxel[i] == null)
                         {
                             isCubeValid = false;
-                            return Vector4.zero;
+                            break;
                         }
                     }
-                    Vector4[] cube = new Vector4[8]
-                    {
-                        CreateCubeCorner(x, y, z + 1),
-                        CreateCubeCorner(x + 1, y, z + 1),
-                        CreateCubeCorner(x + 1, y, z),
-                        CreateCubeCorner(x, y, z),
-                        CreateCubeCorner(x, y + 1, z + 1),
-                        CreateCubeCorner(x + 1, y + 1, z + 1),
-                        CreateCubeCorner(x + 1, y + 1, z),
-                        CreateCubeCorner(x, y + 1, z),
-                    };
 
                     if (isCubeValid)
                     {
-                        int cubeIndex = Utility.GetCubeIndex(cube, surfaceLevel);
+                        int cubeIndex = Utility.GetCubeIndex(voxel, surfaceLevel);
                         if (LookupTables.edgeTable[cubeIndex] == 0)
                             continue;
 
@@ -111,35 +57,25 @@ public class MarchingCubes
                         {
                             // The edge type depends on its orientation, with 0 being along the X axis, 1 along Z, and 2 along Y.
                             int edgeType = (edgeValue < 8) ? edgeValue % 2 : 2;
-                            if (cache[(int)cube[primaryCorner].x, (int)cube[primaryCorner].z, edgeType] != -1)
+                            if (cache[voxel.Pos(primaryCorner).x, voxel.Pos(primaryCorner).z, edgeType] != -1)
                             {
-                                vertIndices[edgeValue] = cache[(int)cube[primaryCorner].x, (int)cube[primaryCorner].z, edgeType];
+                                vertIndices[edgeValue] = cache[voxel.Pos(primaryCorner).x, voxel.Pos(primaryCorner).z, edgeType];
                             }
                             else
                             {
                                 // Create new vertex
                                 vertIndices[edgeValue] = verticies.Count;
-                                cache[(int)cube[primaryCorner].x, (int)cube[primaryCorner].z, edgeType] = vertIndices[edgeValue];
-                                Vector3 vertex = Utility.LerpEdge(cube[LookupTables.edgeConnection[edgeValue, 0]],
-                                                                  cube[LookupTables.edgeConnection[edgeValue, 1]],
+                                cache[voxel.Pos(primaryCorner).x, voxel.Pos(primaryCorner).z, edgeType] = vertIndices[edgeValue];
+                                Vector3 vertex = Utility.LerpEdge(voxel.GetVertex(LookupTables.edgeConnection[edgeValue, 0]),
+                                                                  voxel.GetVertex(LookupTables.edgeConnection[edgeValue, 1]),
                                                                   surfaceLevel, useSmoothing);
                                 verticies.Add(vertex);
 
                                 // Calculate the vertex normal using data from the surounding verticies. The algorithm is described here:
                                 // https://www.researchgate.net/publication/220944287_Approximating_Normals_for_Marching_Cubes_applied_to_Locally_Supported_Isosurfaces
-                                Vector3Int v0 = new Vector3Int
-                                {
-                                    x = (int)cube[LookupTables.edgeConnection[edgeValue, 0]].x,
-                                    y = (int)cube[LookupTables.edgeConnection[edgeValue, 0]].y,
-                                    z = (int)cube[LookupTables.edgeConnection[edgeValue, 0]].z
-                                };
-                                Vector3Int v1 = new Vector3Int
-                                {
-                                    x = (int)cube[LookupTables.edgeConnection[edgeValue, 1]].x,
-                                    y = (int)cube[LookupTables.edgeConnection[edgeValue, 1]].y,
-                                    z = (int)cube[LookupTables.edgeConnection[edgeValue, 1]].z
-                                };
-                                if (cube[LookupTables.edgeConnection[edgeValue, 0]].w > surfaceLevel)
+                                Vector3Int v0 = voxel.Pos(LookupTables.edgeConnection[edgeValue, 0]);
+                                Vector3Int v1 = voxel.Pos(LookupTables.edgeConnection[edgeValue, 1]);
+                                if (voxel[LookupTables.edgeConnection[edgeValue, 0]].isoValue > surfaceLevel)
                                 {
                                     Vector3Int temp = v1;
                                     v1 = v0;
@@ -150,34 +86,34 @@ public class MarchingCubes
                                 Vector3 p0 = Vector3.zero, p1 = Vector3.zero, p2 = Vector3.zero, p3 = Vector3.zero;
                                 Vector4 CreateEdgeVertex(int x, int y, int z)
                                 {
-                                    float value = GetValue(x, y, z);
-                                    if (value != -1)
-                                        return new Vector4(x, y, z, value);
+                                    Node value = Utility.GetValue(chunk, x, y, z);
+                                    if (value != null)
+                                        return new Vector4(x, y, z, value.isoValue);
                                     else
                                         return new Vector4(x, y, z, 0.5f);
                                 }
                                 void GetVerticies(Vector3Int a, ref Vector3 edge0, ref Vector3 edge1)
                                 {
                                     // Negitive
-                                    if (GetValue(v0.x-a.x, v0.y-a.y, v0.z-a.z) > surfaceLevel)
+                                    if (Utility.GetValue(chunk, v0.x-a.x, v0.y-a.y, v0.z-a.z)?.isoValue > surfaceLevel)
                                     {
                                         edge0 = Utility.LerpEdge(CreateEdgeVertex(v0.x, v0.y, v0.z), CreateEdgeVertex(v0.x-a.x, v0.y-a.y, v0.z-a.z), surfaceLevel, useSmoothing);
                                     }
                                     else
                                     {
-                                        if (GetValue(v1.x-a.x, v1.y-a.y, v1.z-a.z) > surfaceLevel)
+                                        if (Utility.GetValue(chunk, v1.x-a.x, v1.y-a.y, v1.z-a.z)?.isoValue > surfaceLevel)
                                             edge0 = Utility.LerpEdge(CreateEdgeVertex(v1.x-a.x, v1.y-a.y, v1.z-a.z), CreateEdgeVertex(v0.x-a.x, v0.y-a.y, v0.z-a.z), surfaceLevel, useSmoothing);
                                         else
                                             edge0 = Utility.LerpEdge(CreateEdgeVertex(v1.x-a.x, v1.y-a.y, v1.z-a.z), CreateEdgeVertex(v1.x, v1.y, v1.z), surfaceLevel, useSmoothing);
                                     }
                                     // Positive
-                                    if (GetValue(v0.x+a.x, v0.y+a.y, v0.z+a.z) > surfaceLevel)
+                                    if (Utility.GetValue(chunk, v0.x+a.x, v0.y+a.y, v0.z+a.z)?.isoValue > surfaceLevel)
                                     {
                                         edge1 = Utility.LerpEdge(CreateEdgeVertex(v0.x, v0.y, v0.z), CreateEdgeVertex(v0.x+a.x, v0.y+a.y, v0.z+a.z), surfaceLevel, useSmoothing);
                                     }
                                     else
                                     {
-                                        if (GetValue(v1.x+a.x, v1.y+a.y, v1.z+a.z) > surfaceLevel)
+                                        if (Utility.GetValue(chunk, v1.x+a.x, v1.y+a.y, v1.z+a.z)?.isoValue > surfaceLevel)
                                             edge1 = Utility.LerpEdge(CreateEdgeVertex(v1.x+a.x, v1.y+a.y, v1.z+a.z), CreateEdgeVertex(v0.x+a.x, v0.y+a.y, v0.z+a.z), surfaceLevel, useSmoothing);
                                         else
                                             edge1 = Utility.LerpEdge(CreateEdgeVertex(v1.x+a.x, v1.y+a.y, v1.z+a.z), CreateEdgeVertex(v1.x, v1.y, v1.z), surfaceLevel, useSmoothing);
@@ -255,15 +191,15 @@ public class MarchingCubes
     /// <summary>
     /// Generate mesh data for a single voxel
     /// </summary>
-    /// <param name="cube">Corners forming the cube. [X, Y, Z, Value]</param>
+    /// <param name="voxel">Voxel to generate mesh data for</param>
     /// <param name="verticies"></param>
     /// <param name="triangles"></param>
     /// <param name="surfaceLevel"></param>
     /// <param name="useSmoothing">Should interpolation be used?</param>
-    public static void ProcessCube(Vector4[] cube, List<Vector3> verticies, List<int> triangles, 
+    public static void ProcessCube(Voxel voxel, List<Vector3> verticies, List<int> triangles, 
                                    float surfaceLevel, bool useSmoothing)
     {
-        int cubeIndex = Utility.GetCubeIndex(cube, surfaceLevel);
+        int cubeIndex = Utility.GetCubeIndex(voxel, surfaceLevel);
         if (LookupTables.edgeTable[cubeIndex] == 0)
             return;
 
@@ -274,8 +210,8 @@ public class MarchingCubes
             if ((LookupTables.edgeTable[cubeIndex] & 1 << edgeVal) != 0)
             {
                 vertIndices[edgeVal] = verticies.Count;
-                verticies.Add(Utility.LerpEdge(cube[LookupTables.edgeConnection[edgeVal, 0]], 
-                                               cube[LookupTables.edgeConnection[edgeVal, 1]], 
+                verticies.Add(Utility.LerpEdge(voxel.GetVertex(LookupTables.edgeConnection[edgeVal, 0]),
+                                               voxel.GetVertex(LookupTables.edgeConnection[edgeVal, 1]), 
                                                surfaceLevel, useSmoothing));
             }
         }
