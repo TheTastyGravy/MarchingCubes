@@ -12,7 +12,8 @@ public class MarchingCubes
     /// <param name="verticies"></param>
     /// <param name="triangles"></param>
     /// <param name="normals"></param>
-    public static void MarchCubes(Chunk chunk, float surfaceLevel, bool useSmoothing, List<Vector3> verticies, List<int> triangles, List<Vector3> normals)
+    /// <param name="uvs"></param>
+    public static void MarchCubes(Chunk chunk, float surfaceLevel, bool useSmoothing, List<Vector3> verticies, List<int> triangles, List<Vector3> normals, List<Vector2> uvs)
     {
         Vector3Int size = chunk.nodes.Size;
         bool isCubeValid;
@@ -70,6 +71,10 @@ public class MarchingCubes
                                                                   voxel.GetVertex(LookupTables.edgeConnection[edgeValue, 1]),
                                                                   surfaceLevel, useSmoothing);
                                 verticies.Add(vertex);
+                                // Get initial material data. CreateEdgeVertex will update the data if the vertex has a material.
+                                Node node0 = voxel[LookupTables.edgeConnection[edgeValue, 0]];
+                                Node node1 = voxel[LookupTables.edgeConnection[edgeValue, 1]];
+                                Vector2 matData = new Vector2(Mathf.Max(node0.materialID, node1.materialID), (surfaceLevel - node0.isoValue) / (node1.isoValue - node0.isoValue));
 
                                 // Calculate the vertex normal using data from the surounding verticies. The algorithm is described here:
                                 // https://www.researchgate.net/publication/220944287_Approximating_Normals_for_Marching_Cubes_applied_to_Locally_Supported_Isosurfaces
@@ -88,7 +93,15 @@ public class MarchingCubes
                                 {
                                     Node value = Utility.GetValue(chunk, x, y, z);
                                     if (value != null)
+                                    {
+                                        // If this node has a material, update the data for the vertex
+                                        if (value.materialID > matData.x)
+                                        {
+                                            matData.x = value.materialID;
+                                            matData.y = value.isoValue;
+                                        }
                                         return new Vector4(x, y, z, value.isoValue);
+                                    }
                                     else
                                         return new Vector4(x, y, z, 0.5f);
                                 }
@@ -144,6 +157,8 @@ public class MarchingCubes
                                 if (v0.x > v1.x || v0.y < v1.y || v0.z > v1.z)
                                     normal = -normal;
                                 normals.Add(normal);
+                                // Set material data
+                                uvs.Add(matData);
                             }
                         }
 

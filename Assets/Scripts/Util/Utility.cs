@@ -6,6 +6,7 @@ using UnityEngine;
 public class Node
 {
     public float isoValue;
+    public int materialID;
 }
 
 [System.Serializable]

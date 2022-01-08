@@ -142,11 +142,13 @@ public class VoxelMap : MonoBehaviour
         List<Vector3> verticies = new List<Vector3>();
         List<int> triangles = new List<int>();
         List<Vector3> normals = new List<Vector3>();
-        MarchingCubes.MarchCubes(chunk, surface, smooth, verticies, triangles, normals);
+        List<Vector2> uvs = new List<Vector2>();
+        MarchingCubes.MarchCubes(chunk, surface, smooth, verticies, triangles, normals, uvs);
 
         chunk.mesh.Clear();
         chunk.mesh.SetVertices(verticies);
         chunk.mesh.SetTriangles(triangles, 0);
+        chunk.mesh.SetUVs(0, uvs);
         if (useCustomNormals)
             chunk.mesh.SetNormals(normals);
         else
@@ -524,6 +526,7 @@ public class VoxelMap : MonoBehaviour
                         chunk.nodes[x, y, z] = new Node();
                     Vector3 pos = basePos + new Vector3(x, y, z) * noiseSize;
                     chunk.nodes[x, y, z].isoValue = PerlinNoise3D(pos);
+                    chunk.nodes[x, y, z].materialID = Mathf.CeilToInt(PerlinNoise3D((basePos + Vector3.one * 5) + new Vector3(x, y, z) * noiseSize * 3.5f) - 0.55f);
                 }
             }
         }
