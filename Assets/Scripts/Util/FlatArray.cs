@@ -43,29 +43,33 @@ public class FlatArray3D<T>
 {
     public FlatArray3D(Vector3Int a_size)
     {
-        m_size = a_size;
-        m_array = new T[a_size.x * a_size.y * a_size.z];
+        m_sizeX = a_size.x;
+        m_sizeY = a_size.y;
+        m_sizeZ = a_size.z;
+        m_array = new T[m_sizeX * m_sizeY * m_sizeZ];
     }
     public FlatArray3D(int x, int y, int z)
     {
-        m_size = new Vector3Int(x, y, z);
-        m_array = new T[x * y * z];
+        m_sizeX = x;
+        m_sizeY = y;
+        m_sizeZ = z;
+        m_array = new T[m_sizeX * m_sizeY * m_sizeZ];
     }
 
     public T this[int x, int y, int z]
     {
-        get { return m_array[(x * m_size.y + y) * m_size.z + z]; }
-        set { m_array[(x * m_size.y + y) * m_size.z + z] = value; }
+        get => m_array[(x * m_sizeY + y) * m_sizeZ + z];
+        set => m_array[(x * m_sizeY + y) * m_sizeZ + z] = value;
     }
     public T this[uint x, uint y, uint z]
     {
-        get { return m_array[(x * m_size.y + y) * m_size.z + z]; }
-        set { m_array[(x * m_size.y + y) * m_size.z + z] = value; }
+        get => m_array[(x * m_sizeY + y) * m_sizeZ + z];
+        set => m_array[(x * m_sizeY + y) * m_sizeZ + z] = value;
     }
     public T this[Vector3Int i]
     {
-        get { return m_array[(i.x * m_size.y + i.y) * m_size.z + i.z]; }
-        set { m_array[(i.x * m_size.y + i.y) * m_size.z + i.z] = value; }
+        get => m_array[(i.x * m_sizeY + i.y) * m_sizeZ + i.z];
+        set => m_array[(i.x * m_sizeY + i.y) * m_sizeZ + i.z] = value;
     }
     public T this[int i]
     {
@@ -84,13 +88,13 @@ public class FlatArray3D<T>
     /// <param name="target">Array to copy values from</param>
     public void CopyValuesFrom(FlatArray3D<T> target)
     {
-        for (uint x = 0; x < m_size.x && x < target.Size.x; x++)
+        for (uint x = 0; x < m_sizeX && x < target.SizeX; x++)
         {
-            for (uint y = 0; y < m_size.y && y < target.Size.y; y++)
+            for (uint y = 0; y < m_sizeY && y < target.SizeY; y++)
             {
-                for (uint z = 0; z < m_size.z && z < target.Size.z; z++)
+                for (uint z = 0; z < m_sizeZ && z < target.SizeZ; z++)
                 {
-                    m_array[(x * m_size.y + y) * m_size.z + z] = target[x, y, z];
+                    m_array[(x * m_sizeY + y) * m_sizeZ + z] = target[x, y, z];
                 }
             }
         }
@@ -99,7 +103,14 @@ public class FlatArray3D<T>
     [SerializeField, HideInInspector]
     private T[] m_array;
     [SerializeField, HideInInspector]
-    private Vector3Int m_size;
-    public Vector3Int Size => m_size;
+    private int m_sizeX;
+    [SerializeField, HideInInspector]
+    private int m_sizeY;
+    [SerializeField, HideInInspector]
+    private int m_sizeZ;
+    public int SizeX => m_sizeX;
+    public int SizeY => m_sizeY;
+    public int SizeZ => m_sizeZ;
+    public Vector3Int Size => new Vector3Int(m_sizeX, m_sizeY, m_sizeZ);
     public int Length => m_array.Length;
 }

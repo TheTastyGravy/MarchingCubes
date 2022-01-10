@@ -42,8 +42,8 @@ public class Voxel
 
     public Node this[int i]
     {
-        get { return m_verticies[i]; }
-        set { m_verticies[i] = value; }
+        get => m_verticies [i];
+        set => m_verticies[i] = value;
     }
 
     /// <summary>
@@ -51,18 +51,38 @@ public class Voxel
     /// </summary>
     public Vector3Int Pos(int i)
     {
-        if (i < 0 || i > 7)
-            return Vector3Int.zero;
         Vector3Int res = m_baseIndex;
-        if (i >= 4)
+        switch (i)
         {
-            res.y += 1;
-            i %= 4;
+            case 0:
+                res.z++;
+                break;
+            case 1:
+                res.x++;
+                res.z++;
+                break;
+            case 2:
+                res.x++;
+                break;
+            case 3:
+                break;
+            case 4:
+                res.y++;
+                res.z++;
+                break;
+            case 5:
+                res.x++;
+                res.y++;
+                res.z++;
+                break;
+            case 6:
+                res.x++;
+                res.y++;
+                break;
+            case 7:
+                res.y++;
+                break;
         }
-        if (i < 2)
-            res.z += 1;
-        if (i == 1 || i == 2)
-            res.x += 1;
         return res;
     }
 
@@ -72,7 +92,7 @@ public class Voxel
     public Vector4 GetVertex(int i)
     {
         Vector3Int pos = Pos(i);
-        return new Vector4(pos.x, pos.y, pos.z, this[i].isoValue);
+        return new Vector4(pos.x, pos.y, pos.z, m_verticies[i].isoValue);
     }
 
     private Vector3Int m_baseIndex;
@@ -96,15 +116,45 @@ public class Utility
     }
 
     /// <summary>
-    /// Interpolate to find the edge vertex 
+    /// Interpolate to find the edge vertex
     /// </summary>
-    /// <param name="v1">The first corner</param>
-    /// <param name="v2">The secon corner</param>
+    /// <param name="v0">The first corner</param>
+    /// <param name="v1">The second corner</param>
     /// <returns>The position of the edge vertex</returns>
-    public static Vector3 LerpEdge(Vector4 v1, Vector4 v2, float surfaceLevel, bool useSmoothing)
+    public static Vector3 LerpEdge(Vector4 v0, Vector4 v1, float surfaceLevel, bool useSmoothing)
     {
-        float t = useSmoothing ? (surfaceLevel - v1.w) / (v2.w - v1.w) : 0.5f;
-        return v1 + (v2 - v1) * t;
+        return LerpEdge(v0.x, v0.y, v0.z, v0.w, v1.x, v1.y, v1.z, v1.w, surfaceLevel, useSmoothing);
+    }
+
+    /// <summary>
+    /// Interpolate to find the edge vertex
+    /// </summary>
+    /// <param name="v0X">X of the first corner</param>
+    /// <param name="v0Y">Y of the first corner</param>
+    /// <param name="v0Z">Z of the first corner</param>
+    /// <param name="v0W">Iso of the first corner</param>
+    /// <param name="v1X">X of the second corner</param>
+    /// <param name="v1Y">Y of the second corner</param>
+    /// <param name="v1Z">Z of the second corner</param>
+    /// <param name="v1W">Iso of the second corner</param>
+    /// <returns>The position of the edge vertex</returns>
+    public static Vector3 LerpEdge(float v0X, float v0Y, float v0Z, float v0W, float v1X, float v1Y, float v1Z, float v1W, float surfaceLevel, bool useSmoothing)
+    {
+        float t = useSmoothing ? (surfaceLevel - v0W) / (v1W - v0W) : 0.5f;
+        Vector3 res;
+        res.x = v0X + (v1X - v0X) * t;
+        res.y = v0Y + (v1Y - v0Y) * t;
+        res.z = v0Z + (v1Z - v0Z) * t;
+        return res;
+    }
+
+    /// <summary>
+    /// Get the node at the index relitive to chunk. If the index is outside the chunk, its neighbours will be used
+    /// </summary>
+    /// <returns>The node at the index, or null if it doesnt exist</returns>
+    public static Node GetValue(Chunk chunk, Vector3Int index)
+    {
+        return GetValue(chunk, index.x, index.y, index.z);
     }
 
     /// <summary>
@@ -113,44 +163,46 @@ public class Utility
     /// <returns>The node at the index, or null if it doesnt exist</returns>
     public static Node GetValue(Chunk chunk, int x, int y, int z)
     {
-        Vector3Int size = chunk.nodes.Size;
-        if (x >= 0 && y >= 0 && z >= 0 && x < size.x && y < size.y && z < size.z)
+        int sizeX = chunk.nodes.SizeX;
+        int sizeY = chunk.nodes.SizeY;
+        int sizeZ = chunk.nodes.SizeZ;
+        if (x >= 0 && y >= 0 && z >= 0 && x < sizeX && y < sizeY && z < sizeZ)
             return chunk.nodes[x, y, z];
 
-        Vector3Int chunkIndex = Vector3Int.zero;
-        if (x >= size.x)
+        Vector3Int chunkIndex = chunk.position;
+        if (x >= sizeX)
         {
-            chunkIndex.x = 1;
-            x -= size.x;
+            chunkIndex.x += 1;
+            x -= sizeX;
         }
-        if (y >= size.y)
+        else if (x < 0)
         {
-            chunkIndex.y = 1;
-            y -= size.y;
+            chunkIndex.x -= 1;
+            x += sizeX;
         }
-        if (z >= size.z)
+        if (y >= sizeY)
         {
-            chunkIndex.z = 1;
-            z -= size.z;
+            chunkIndex.y += 1;
+            y -= sizeY;
         }
-        if (x < 0)
+        else if (y < 0)
         {
-            chunkIndex.x = -1;
-            x += size.x;
+            chunkIndex.y -= 1;
+            y += sizeY;
         }
-        if (y < 0)
+        if (z >= sizeZ)
         {
-            chunkIndex.y = -1;
-            y += size.y;
+            chunkIndex.z += 1;
+            z -= sizeZ;
         }
-        if (z < 0)
+        else if (z < 0)
         {
-            chunkIndex.z = -1;
-            z += size.z;
+            chunkIndex.z -= 1;
+            z += sizeZ;
         }
         
         // Use the neighbour chunk
-        Chunk current = chunk.map.GetChunk(chunk.position + chunkIndex);
+        Chunk current = chunk.map.GetChunk(chunkIndex);
         if (current == null)
             return null;
         else

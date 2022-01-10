@@ -5,36 +5,38 @@ using UnityEngine;
 using UnityEditor;
 #endif
 
-[ExecuteInEditMode]
 public class VoxelMap : MonoBehaviour
 {
     // Size of chunk's node array
     public const int ChunkSize = 16;
 
     [SerializeField, HideInInspector]
-    private List<Chunk> chunks = new List<Chunk>();
+    internal List<Chunk> chunks = new List<Chunk>();
     public Material meshMaterial;
 
     //temp
+    private Camera cam;
     [Space]
     public Vector2Int chunkCount = Vector2Int.zero;
     public bool generate = false;
     public bool setValues = false;
+    [Space]
+    public float addRate = 1;
+    public float removeRate = 1;
+    [Space]
     public float surface = 0.5f;
     public float noiseSize = 1;
     public bool smooth;
     public bool useCustomNormals;
-
+    
     [SerializeField, HideInInspector]
     private bool currentSmooth;
     [SerializeField, HideInInspector]
     private bool currentNormals;
 
-    public Transform rayCastObj;
-
     public bool drawDebug = false;
     [SerializeField, HideInInspector]
-    public List<Vector3> debugList = new List<Vector3>();
+    private List<Vector3> debugList = new List<Vector3>();
 
 
 
@@ -131,11 +133,10 @@ public class VoxelMap : MonoBehaviour
     /// </summary>
     public void UpdateChunk(Chunk chunk)
     {
-        // Check we own this chunk
-        if (chunk == null || !chunks.Contains(chunk))
+        if (chunk == null)
         {
             if (drawDebug)
-                Utility.PrintWarning("Attempted to update chunk that does not exist or belong to this map");
+                Utility.PrintWarning("Attempted to update chunk that does not exist");
             return;
         }
 
@@ -154,7 +155,6 @@ public class VoxelMap : MonoBehaviour
         else
             chunk.mesh.RecalculateNormals();
     }
-
 
     private void UpdateAllChunks()
     {
@@ -487,13 +487,43 @@ public class VoxelMap : MonoBehaviour
             UpdateAllChunks();
         }
     }
-
+    
     private void Update()
     {
-        if (rayCastObj != null)
+        if (cam == null)
+            cam = Camera.main;
+
+        // Left button used to add to surface, right button to remove. Simple implementation for testing
+        if (Input.GetMouseButton(0) || Input.GetMouseButton(1))
         {
-            debugList.Clear();
-            Raycast(rayCastObj.position, rayCastObj.forward);
+            Ray mouseRay = cam.ScreenPointToRay(Input.mousePosition);
+            if (Raycast(mouseRay.origin, mouseRay.direction, out Vector3 outHitPoint))
+            {
+                Chunk chunk = GetChunk(new Vector3Int(Mathf.FloorToInt(outHitPoint.x / ChunkSize),
+                                                      Mathf.FloorToInt(outHitPoint.y / ChunkSize),
+                                                      Mathf.FloorToInt(outHitPoint.z / ChunkSize)));
+                if (chunk == null)
+                    return;
+
+                Vector3Int index = new Vector3Int(Mathf.FloorToInt(outHitPoint.x) % ChunkSize,
+                                                  Mathf.FloorToInt(outHitPoint.y) % ChunkSize,
+                                                  Mathf.FloorToInt(outHitPoint.z) % ChunkSize);
+                float rate = (Input.GetMouseButton(0) ? addRate : -removeRate) * Time.deltaTime;
+                Vector3Int itter = Vector3Int.zero;
+                for (itter.x = -1; itter.x <= 1; itter.x++)
+                {
+                    for (itter.y = -1; itter.y <= 1; itter.y++)
+                    {
+                        for (itter.z = -1; itter.z <= 1; itter.z++)
+                        {
+                            Node node = Utility.GetValue(chunk, index + itter);
+                            if (node != null)
+                                node.isoValue = Mathf.Min(Mathf.Max(node.isoValue + rate, 0), 1);
+                        }
+                    }
+                }
+                UpdateAllChunks();
+            }
         }
     }
 
@@ -532,3 +562,59 @@ public class VoxelMap : MonoBehaviour
         }
     }
 }
+
+#if UNITY_EDITOR
+[CustomEditor(typeof(VoxelMap))]
+class VoxelMapEditor : Editor
+{
+    [DrawGizmo(GizmoType.NonSelected | GizmoType.Selected)]
+    private static void DrawNodes(VoxelMap aTarget, GizmoType aGizmoType)
+    {
+        if (aTarget.drawDebug)
+        {
+            Camera cam = Camera.current;
+            foreach (Chunk chunk in aTarget.chunks)
+            {
+                int sizeX = chunk.nodes.SizeX, sizeY = chunk.nodes.SizeY, sizeZ = chunk.nodes.SizeZ;
+                Vector3 basePos = chunk.position * VoxelMap.ChunkSize;
+                Vector3 pos;
+                Vector3 viewPortPos;
+
+                for (int y = 0; y < sizeY; y++)
+                {
+                    for (int x = 0; x < sizeX; x++)
+                    {
+                        for (int z = 0; z < sizeZ; z++)
+                        {
+                            pos = basePos + new Vector3(x, y, z);
+                            viewPortPos = cam.WorldToViewportPoint(pos);
+                            if (viewPortPos.x < 0 || viewPortPos.y < 0 || viewPortPos.z < 0 || viewPortPos.x > 1 || viewPortPos.y > 1 || viewPortPos.z > 10)
+                            {
+                                continue;
+                            }
+
+                            if (chunk.nodes[x, y, z].materialID == 0)
+                            {
+                                Gizmos.color = new Color(1, 1, 1, 1);
+                            }
+                            else
+                            {
+                                Gizmos.color = new Color(1, 0, 0, 1);
+                            }
+
+                            float factor = Mathf.Pow(Mathf.Cos(Mathf.PI * viewPortPos.z * 0.1f * 0.5f), 0.5f);
+                            Gizmos.DrawSphere(pos, 0.1f * factor);
+                            if (viewPortPos.z < 3)
+                            {
+                                Gizmos.DrawLine(pos - Vector3.right, pos + Vector3.right);
+                                Gizmos.DrawLine(pos - Vector3.up, pos + Vector3.up);
+                                Gizmos.DrawLine(pos - Vector3.forward, pos + Vector3.forward);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+#endif //UNITY_EDITOR
