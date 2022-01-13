@@ -67,28 +67,8 @@ public class MarchingCubes
                             }
                             else
                             {
-                                // Create new vertex
-                                vertIndices[edgeValue] = verticies.Count;
-                                cache[primaryPos.x, primaryPos.z, edgeType] = vertIndices[edgeValue];
-                                Vector3 vertex = Utility.LerpEdge(voxel.GetVertex(LookupTables.edgeConnection[edgeValue, 0]),
-                                                                  voxel.GetVertex(LookupTables.edgeConnection[edgeValue, 1]),
-                                                                  surfaceLevel, useSmoothing);
-                                verticies.Add(vertex);
-                                // Get initial material data. CreateEdgeVertex will update the data if the vertex has a material.
-                                Node node0 = voxel[LookupTables.edgeConnection[edgeValue, 0]];
-                                Node node1 = voxel[LookupTables.edgeConnection[edgeValue, 1]];
-                                Vector2 matData = new Vector2(Mathf.Max(node0.materialID, node1.materialID), (surfaceLevel - node0.isoValue) / (node1.isoValue - node0.isoValue));
-                                void MatTest(int x, int y, int z, Node n)
-                                {
-                                    if (n.materialID > matData.x)
-                                    {
-                                        matData.x = n.materialID;
-                                        matData.y = n.isoValue;
-                                    }
-                                }
-
-                                // Calculate the vertex normal using data from the surounding verticies. The algorithm is described here:
-                                // https://www.researchgate.net/publication/220944287_Approximating_Normals_for_Marching_Cubes_applied_to_Locally_Supported_Isosurfaces
+                                Node v0Val = voxel[LookupTables.edgeConnection[edgeValue, 0]];
+                                Node v1Val = voxel[LookupTables.edgeConnection[edgeValue, 1]];
                                 int v0X, v0Y, v0Z, v1X, v1Y, v1Z;
                                 {
                                     Vector3Int t = voxel.Pos(LookupTables.edgeConnection[edgeValue, 0]);
@@ -100,8 +80,20 @@ public class MarchingCubes
                                     v1Y = t.y;
                                     v1Z = t.z;
                                 }
-                                if (voxel[LookupTables.edgeConnection[edgeValue, 0]].isoValue > surfaceLevel)
+                                // Create new vertex
+                                vertIndices[edgeValue] = verticies.Count;
+                                cache[primaryPos.x, primaryPos.z, edgeType] = vertIndices[edgeValue];
+                                Vector3 vertex = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
+                                verticies.Add(vertex);
+
+                                // Calculate the vertex normal using data from the surounding verticies. The algorithm is described here:
+                                // https://www.researchgate.net/publication/220944287_Approximating_Normals_for_Marching_Cubes_applied_to_Locally_Supported_Isosurfaces
+                                // Make v0 below surface and v1 above surface
+                                if (v0Val.isoValue < surfaceLevel)
                                 {
+                                    Node tNode = v0Val;
+                                    v0Val = v1Val;
+                                    v1Val = tNode;
                                     int tX, tY, tZ;
                                     tX = v0X;
                                     tY = v0Y;
@@ -113,69 +105,52 @@ public class MarchingCubes
                                     v1Y = tY;
                                     v1Z = tZ;
                                 }
-
                                 // Get adjacent edge verticies
                                 Vector3 p0 = Vector3.zero, p1 = p0, p2 = p0, p3 = p0;
-                                Node v0Val = Utility.GetValue(chunk, v0X, v0Y, v0Z);
-                                Node v1Val = Utility.GetValue(chunk, v1X, v1Y, v1Z);
                                 void GetVerticiesX(out Vector3 edge0, out Vector3 edge1)
                                 {
                                     Node v0a, v1a;
                                     // Negitive
                                     v0a = Utility.GetValue(chunk, v0X - 1, v0Y, v0Z);
-                                    if (v0a?.isoValue > surfaceLevel)
+                                    if (v0a != null)
                                     {
-                                        edge0 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X - 1, v0Y, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
-                                        MatTest(v0X - 1, v0Y, v0Z, v0a);
-                                    }
-                                    else
-                                    {
-                                        v1a = Utility.GetValue(chunk, v1X - 1, v1Y, v1Z);
-                                        if (v1a != null)
+                                        if (v0a.isoValue < surfaceLevel)
                                         {
-                                            if (v1a.isoValue > surfaceLevel)
-                                            {
-                                                edge0 = Utility.LerpEdge(v1X - 1, v1Y, v1Z, v1a.isoValue, v0X - 1, v0Y, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
-                                                MatTest(v0X - 1, v0Y, v0Z, v0a);
-                                            }
-                                            else
-                                            {
-                                                edge0 = Utility.LerpEdge(v1X - 1, v1Y, v1Z, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
-                                            }
-                                            MatTest(v1X - 1, v1Y, v1Z, v1a);
+                                            edge0 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X - 1, v0Y, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
                                         }
                                         else
                                         {
-                                            edge0 = Utility.LerpEdge(v1X - 1, v1Y, v1Z, 1, v0X - 1, v0Y, v0Z, 1, surfaceLevel, false);
+                                            v1a = Utility.GetValue(chunk, v1X - 1, v1Y, v1Z);
+                                            if (v1a.isoValue < surfaceLevel)
+                                                edge0 = Utility.LerpEdge(v1X - 1, v1Y, v1Z, v1a.isoValue, v0X - 1, v0Y, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
+                                            else
+                                                edge0 = Utility.LerpEdge(v1X - 1, v1Y, v1Z, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
                                         }
+                                    }
+                                    else
+                                    {
+                                        edge0 = vertex;
                                     }
                                     // Positive
                                     v0a = Utility.GetValue(chunk, v0X + 1, v0Y, v0Z);
-                                    if (v0a?.isoValue > surfaceLevel)
+                                    if (v0a != null)
                                     {
-                                        edge1 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X + 1, v0Y, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
-                                        MatTest(v0X + 1, v0Y, v0Z, v0a);
-                                    }
-                                    else
-                                    {
-                                        v1a = Utility.GetValue(chunk, v1X + 1, v1Y, v1Z);
-                                        if (v1a != null)
+                                        if (v0a.isoValue < surfaceLevel)
                                         {
-                                            if (v1a.isoValue > surfaceLevel)
-                                            {
-                                                edge1 = Utility.LerpEdge(v1X + 1, v1Y, v1Z, v1a.isoValue, v0X + 1, v0Y, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
-                                                MatTest(v0X + 1, v0Y, v0Z, v0a);
-                                            }
-                                            else
-                                            {
-                                                edge1 = Utility.LerpEdge(v1X + 1, v1Y, v1Z, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
-                                            }
-                                            MatTest(v1X + 1, v1Y, v1Z, v1a);
+                                            edge1 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X + 1, v0Y, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
                                         }
                                         else
                                         {
-                                            edge1 = Utility.LerpEdge(v1X + 1, v1Y, v1Z, 1, v0X + 1, v0Y, v0Z, 1, surfaceLevel, false);
+                                            v1a = Utility.GetValue(chunk, v1X + 1, v1Y, v1Z);
+                                            if (v1a.isoValue < surfaceLevel)
+                                                edge1 = Utility.LerpEdge(v1X + 1, v1Y, v1Z, v1a.isoValue, v0X + 1, v0Y, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
+                                            else
+                                                edge1 = Utility.LerpEdge(v1X + 1, v1Y, v1Z, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
                                         }
+                                    }
+                                    else
+                                    {
+                                        edge1 = vertex;
                                     }
                                 }
                                 void GetVerticiesY(out Vector3 edge0, out Vector3 edge1)
@@ -183,59 +158,45 @@ public class MarchingCubes
                                     Node v0a, v1a;
                                     // Negitive
                                     v0a = Utility.GetValue(chunk, v0X, v0Y - 1, v0Z);
-                                    if (v0a?.isoValue > surfaceLevel)
+                                    if (v0a != null)
                                     {
-                                        edge0 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X, v0Y - 1, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
-                                        MatTest(v0X, v0Y - 1, v0Z, v0a);
-                                    }
-                                    else
-                                    {
-                                        v1a = Utility.GetValue(chunk, v1X, v1Y - 1, v1Z);
-                                        if (v1a != null)
+                                        if (v0a.isoValue < surfaceLevel)
                                         {
-                                            if (v1a.isoValue > surfaceLevel)
-                                            {
-                                                edge0 = Utility.LerpEdge(v1X, v1Y - 1, v1Z, v1a.isoValue, v0X, v0Y - 1, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
-                                                MatTest(v0X, v0Y - 1, v0Z, v0a);
-                                            }
-                                            else
-                                            {
-                                                edge0 = Utility.LerpEdge(v1X, v1Y - 1, v1Z, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
-                                            }
-                                            MatTest(v1X, v1Y - 1, v1Z, v1a);
+                                            edge0 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X, v0Y - 1, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
                                         }
                                         else
                                         {
-                                            edge0 = Utility.LerpEdge(v1X, v1Y - 1, v1Z, 1, v0X, v0Y - 1, v0Z, 1, surfaceLevel, false);
+                                            v1a = Utility.GetValue(chunk, v1X, v1Y - 1, v1Z);
+                                            if (v1a.isoValue < surfaceLevel)
+                                                edge0 = Utility.LerpEdge(v1X, v1Y - 1, v1Z, v1a.isoValue, v0X, v0Y - 1, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
+                                            else
+                                                edge0 = Utility.LerpEdge(v1X, v1Y - 1, v1Z, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
                                         }
+                                    }
+                                    else
+                                    {
+                                        edge0 = vertex;
                                     }
                                     // Positive
                                     v0a = Utility.GetValue(chunk, v0X, v0Y + 1, v0Z);
-                                    if (v0a?.isoValue > surfaceLevel)
+                                    if (v0a != null)
                                     {
-                                        edge1 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X, v0Y + 1, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
-                                        MatTest(v0X, v0Y + 1, v0Z, v0a);
-                                    }
-                                    else
-                                    {
-                                        v1a = Utility.GetValue(chunk, v1X, v1Y + 1, v1Z);
-                                        if (v1a != null)
+                                        if (v0a.isoValue < surfaceLevel)
                                         {
-                                            if (v1a.isoValue > surfaceLevel)
-                                            {
-                                                edge1 = Utility.LerpEdge(v1X, v1Y + 1, v1Z, v1a.isoValue, v0X, v0Y + 1, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
-                                                MatTest(v0X, v0Y + 1, v0Z, v0a);
-                                            }
-                                            else
-                                            {
-                                                edge1 = Utility.LerpEdge(v1X, v1Y + 1, v1Z, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
-                                            }
-                                            MatTest(v1X, v1Y + 1, v1Z, v1a);
+                                            edge1 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X, v0Y + 1, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
                                         }
                                         else
                                         {
-                                            edge1 = Utility.LerpEdge(v1X, v1Y + 1, v1Z, 1, v0X, v0Y + 1, v0Z, 1, surfaceLevel, false);
+                                            v1a = Utility.GetValue(chunk, v1X, v1Y + 1, v1Z);
+                                            if (v1a.isoValue < surfaceLevel)
+                                                edge1 = Utility.LerpEdge(v1X, v1Y + 1, v1Z, v1a.isoValue, v0X, v0Y + 1, v0Z, v0a.isoValue, surfaceLevel, useSmoothing);
+                                            else
+                                                edge1 = Utility.LerpEdge(v1X, v1Y + 1, v1Z, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
                                         }
+                                    }
+                                    else
+                                    {
+                                        edge1 = vertex;
                                     }
                                 }
                                 void GetVerticiesZ(out Vector3 edge0, out Vector3 edge1)
@@ -243,59 +204,45 @@ public class MarchingCubes
                                     Node v0a, v1a;
                                     // Negitive
                                     v0a = Utility.GetValue(chunk, v0X, v0Y, v0Z - 1);
-                                    if (v0a?.isoValue > surfaceLevel)
+                                    if (v0a != null)
                                     {
-                                        edge0 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X, v0Y, v0Z - 1, v0a.isoValue, surfaceLevel, useSmoothing);
-                                        MatTest(v0X, v0Y, v0Z - 1, v0a);
-                                    }
-                                    else
-                                    {
-                                        v1a = Utility.GetValue(chunk, v1X, v1Y, v1Z - 1);
-                                        if (v1a != null)
+                                        if (v0a.isoValue < surfaceLevel)
                                         {
-                                            if (v1a.isoValue > surfaceLevel)
-                                            {
-                                                edge0 = Utility.LerpEdge(v1X, v1Y, v1Z - 1, v1a.isoValue, v0X, v0Y, v0Z - 1, v0a.isoValue, surfaceLevel, useSmoothing);
-                                                MatTest(v0X, v0Y, v0Z - 1, v0a);
-                                            }
-                                            else
-                                            {
-                                                edge0 = Utility.LerpEdge(v1X, v1Y, v1Z - 1, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
-                                            }
-                                            MatTest(v1X, v1Y, v1Z - 1, v1a);
+                                            edge0 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X, v0Y, v0Z - 1, v0a.isoValue, surfaceLevel, useSmoothing);
                                         }
                                         else
                                         {
-                                            edge0 = Utility.LerpEdge(v1X, v1Y, v1Z - 1, 1, v0X, v0Y, v0Z - 1, 1, surfaceLevel, false);
+                                            v1a = Utility.GetValue(chunk, v1X, v1Y, v1Z - 1);
+                                            if (v1a.isoValue < surfaceLevel)
+                                                edge0 = Utility.LerpEdge(v1X, v1Y, v1Z - 1, v1a.isoValue, v0X, v0Y, v0Z - 1, v0a.isoValue, surfaceLevel, useSmoothing);
+                                            else
+                                                edge0 = Utility.LerpEdge(v1X, v1Y, v1Z - 1, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
                                         }
+                                    }
+                                    else
+                                    {
+                                        edge0 = vertex;
                                     }
                                     // Positive
                                     v0a = Utility.GetValue(chunk, v0X, v0Y, v0Z + 1);
-                                    if (v0a?.isoValue > surfaceLevel)
+                                    if (v0a != null)
                                     {
-                                        edge1 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X, v0Y, v0Z + 1, v0a.isoValue, surfaceLevel, useSmoothing);
-                                        MatTest(v0X, v0Y, v0Z + 1, v0a);
-                                    }
-                                    else
-                                    {
-                                        v1a = Utility.GetValue(chunk, v1X, v1Y, v1Z + 1);
-                                        if (v1a != null)
+                                        if (v0a.isoValue < surfaceLevel)
                                         {
-                                            if (v1a.isoValue > surfaceLevel)
-                                            {
-                                                edge1 = Utility.LerpEdge(v1X, v1Y, v1Z + 1, v1a.isoValue, v0X, v0Y, v0Z + 1, v0a.isoValue, surfaceLevel, useSmoothing);
-                                                MatTest(v0X, v0Y, v0Z + 1, v0a);
-                                            }
-                                            else
-                                            {
-                                                edge1 = Utility.LerpEdge(v1X, v1Y, v1Z + 1, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
-                                            }
-                                            MatTest(v1X, v1Y, v1Z + 1, v1a);
+                                            edge1 = Utility.LerpEdge(v0X, v0Y, v0Z, v0Val.isoValue, v0X, v0Y, v0Z + 1, v0a.isoValue, surfaceLevel, useSmoothing);
                                         }
                                         else
                                         {
-                                            edge1 = Utility.LerpEdge(v1X, v1Y, v1Z + 1, 1, v1X, v1Y, v1Z + 1, 1, surfaceLevel, false);
+                                            v1a = Utility.GetValue(chunk, v1X, v1Y, v1Z + 1);
+                                            if (v1a.isoValue < surfaceLevel)
+                                                edge1 = Utility.LerpEdge(v1X, v1Y, v1Z + 1, v1a.isoValue, v0X, v0Y, v0Z + 1, v0a.isoValue, surfaceLevel, useSmoothing);
+                                            else
+                                                edge1 = Utility.LerpEdge(v1X, v1Y, v1Z + 1, v1a.isoValue, v1X, v1Y, v1Z, v1Val.isoValue, surfaceLevel, useSmoothing);
                                         }
+                                    }
+                                    else
+                                    {
+                                        edge1 = vertex;
                                     }
                                 }
                                 if (v0X == v1X)
@@ -313,7 +260,6 @@ public class MarchingCubes
                                 {
                                     GetVerticiesZ(out p2, out p3);
                                 }
-                                
                                 // The vertex normal is the avarage face normal of the adjacent triangles
                                 p0 -= vertex;
                                 p1 -= vertex;
@@ -324,11 +270,11 @@ public class MarchingCubes
                                 normal += Vector3.Cross(p2, p0);
                                 normal += Vector3.Cross(p1, p2);
                                 normal.Normalize();
-                                if (v0X > v1X || v0Y < v1Y || v0Z > v1Z)
+                                if (v0X < v1X || v0Y > v1Y || v0Z < v1Z)
                                     normal = -normal;
                                 normals.Add(normal);
                                 // Set material data
-                                uvs.Add(matData);
+                                uvs.Add(new Vector2(v0Val.materialID, 0));
                             }
                         }
 

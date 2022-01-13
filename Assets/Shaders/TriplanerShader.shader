@@ -60,7 +60,7 @@ Shader "Custom/TriplanerShader"
             else
                 yCol = UNITY_SAMPLE_TEX2D(_BaseTex, yUV);
             //extra textures
-            if (IN.matData.x == 1 && IN.matData.y > 0.6)
+            if (IN.matData.x > 0.5)
             {
                 half4 xBlend = UNITY_SAMPLE_TEX2D_SAMPLER(_Mat1Tex, _BaseTex, xUV);
                 half4 yBlend = UNITY_SAMPLE_TEX2D_SAMPLER(_Mat1Tex, _BaseTex, yUV);
