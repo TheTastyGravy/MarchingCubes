@@ -23,6 +23,7 @@ public class VoxelMap : MonoBehaviour
     [Space]
     public float addRate = 1;
     public float removeRate = 1;
+    public float radius = 1.25f;
     [Space]
     public float surface = 0.5f;
     public float noiseSize = 1;
@@ -198,7 +199,7 @@ public class VoxelMap : MonoBehaviour
     /// <returns>Does the ray hit anything?</returns>
     public bool Raycast(Vector3 origin, Vector3 direction)
     {
-        return Raycast(origin, direction, out Vector3 _);
+        return Raycast(origin, direction, out VoxelRaycastHit _);
     }
 
     /// <summary>
@@ -206,8 +207,9 @@ public class VoxelMap : MonoBehaviour
     /// </summary>
     /// <param name="origin">Ray origin</param>
     /// <param name="direction">Ray direction. Should be normilized</param>
+    /// <param name="hit"></param>
     /// <returns>Does the ray hit anything?</returns>
-    public bool Raycast(Vector3 origin, Vector3 direction, out Vector3 intersectionPoint)
+    public bool Raycast(Vector3 origin, Vector3 direction, out VoxelRaycastHit hit)
     {
         // Instead of testing against every triangle in every chunk, we determine what voxels the 
         // ray passes through and only check if the ray hits the triangles in those. The method 
@@ -287,7 +289,9 @@ public class VoxelMap : MonoBehaviour
             }
             if (chunk == null)
             {
-                intersectionPoint = Vector3.zero;
+                hit.point = origin;
+                hit.chunk = null;
+                hit.voxelIndex = index;
                 return false;
             }
 
@@ -360,9 +364,11 @@ public class VoxelMap : MonoBehaviour
                         tri[2] = verticies[triangles[i + 2]] + chunkPos * ChunkSize;
                         if (Utility.RayTriangleIntersect(origin, direction, tri, out Vector3 intersect))
                         {
-                            intersectionPoint = transform.worldToLocalMatrix * intersect;
+                            hit.point = transform.worldToLocalMatrix * intersect;
+                            hit.chunk = chunk;
+                            hit.voxelIndex = index;
                             if (drawDebug)
-                                Debug.DrawLine(origin, intersectionPoint, Color.green, 0.001f);
+                                Debug.DrawLine(origin, hit.point, Color.green, 0.001f);
                             return true;
                         }
                     }
@@ -439,8 +445,75 @@ public class VoxelMap : MonoBehaviour
         // The ray has hit nothing
         if (drawDebug)
             Debug.DrawLine(origin, origin + direction * 50, Color.red, 0.001f);
-        intersectionPoint = chunkPos * ChunkSize + index;
+        hit.point = tMax;
+        hit.chunk = chunk;
+        hit.voxelIndex = index;
         return false;
+    }
+
+    /// <summary>
+    /// Add or subtract from the iso value surrounding a raycast hit
+    /// </summary>
+    /// <param name="ammount">How much to change the iso value</param>
+    /// <param name="radius">The radius arround the point to change</param>
+    public void ModifyTerrain(in VoxelRaycastHit hit, float ammount, float radius)
+    {
+        ModifyTerrain(hit.chunk, hit.point, ammount, radius);
+    }
+
+    /// <summary>
+    /// Add or subtract from the iso value surrounding a point
+    /// </summary>
+    /// <param name="ammount">How much to change the iso value</param>
+    /// <param name="radius">The radius arround the point to change</param>
+    public void ModifyTerrain(Vector3 point, float ammount, float radius)
+    {
+        Chunk chunk = GetChunk(new Vector3Int(Mathf.FloorToInt(point.x / ChunkSize),
+                                              Mathf.FloorToInt(point.y / ChunkSize),
+                                              Mathf.FloorToInt(point.z / ChunkSize)));
+        ModifyTerrain(chunk, point, ammount, radius);
+    }
+
+    /// <summary>
+    /// Add or subtract from the iso value surrounding a point
+    /// </summary>
+    /// <param name="chunk">The chunk that the point is relitive to</param>
+    /// <param name="ammount">How much to change the iso value</param>
+    /// <param name="radius">The radius arround the point to change</param>
+    public void ModifyTerrain(Chunk chunk, Vector3 point, float ammount, float radius)
+    {
+        if (chunk == null)
+            return;
+        int hitX = Mathf.RoundToInt(point.x) - chunk.position.x * ChunkSize;
+        int hitY = Mathf.RoundToInt(point.y) - chunk.position.y * ChunkSize;
+        int hitZ = Mathf.RoundToInt(point.z) - chunk.position.z * ChunkSize;
+        float sqrRadius = radius * radius;
+        int extent = Mathf.CeilToInt(radius);
+        float sqrDist;
+        // Squared distance between the hit point and the voxel position
+        sqrDist = point.x - Mathf.Floor(point.x);
+        float unitOffset = sqrDist * sqrDist;
+        sqrDist = point.y - Mathf.Floor(point.y);
+        unitOffset += sqrDist * sqrDist;
+        sqrDist = point.z - Mathf.Floor(point.z);
+        unitOffset += sqrDist * sqrDist;
+
+        for (int x = -extent; x <= extent; x++)
+        {
+            for (int y = -extent; y <= extent; y++)
+            {
+                for (int z = -extent; z <= extent; z++)
+                {
+                    sqrDist = x * x + y * y + z * z;
+                    if (sqrDist - unitOffset < sqrRadius)
+                    {
+                        Node node = Utility.GetValue(chunk, hitX + x, hitY + y, hitZ + z);
+                        if (node != null)
+                            node.isoValue = Mathf.Clamp(node.isoValue + ammount, 0, 1);
+                    }
+                }
+            }
+        }
     }
 
     private void OnDrawGizmos()
@@ -497,31 +570,9 @@ public class VoxelMap : MonoBehaviour
         if (Input.GetMouseButton(0) || Input.GetMouseButton(1))
         {
             Ray mouseRay = cam.ScreenPointToRay(Input.mousePosition);
-            if (Raycast(mouseRay.origin, mouseRay.direction, out Vector3 outHitPoint))
+            if (Raycast(mouseRay.origin, mouseRay.direction, out VoxelRaycastHit hit))
             {
-                Chunk chunk = GetChunk(new Vector3Int(Mathf.FloorToInt(outHitPoint.x / ChunkSize),
-                                                      Mathf.FloorToInt(outHitPoint.y / ChunkSize),
-                                                      Mathf.FloorToInt(outHitPoint.z / ChunkSize)));
-                if (chunk == null)
-                    return;
-
-                Vector3Int index = new Vector3Int(Mathf.FloorToInt(outHitPoint.x) % ChunkSize,
-                                                  Mathf.FloorToInt(outHitPoint.y) % ChunkSize,
-                                                  Mathf.FloorToInt(outHitPoint.z) % ChunkSize);
-                float rate = (Input.GetMouseButton(0) ? addRate : -removeRate) * Time.deltaTime;
-                Vector3Int itter = Vector3Int.zero;
-                for (itter.x = -1; itter.x <= 1; itter.x++)
-                {
-                    for (itter.y = -1; itter.y <= 1; itter.y++)
-                    {
-                        for (itter.z = -1; itter.z <= 1; itter.z++)
-                        {
-                            Node node = Utility.GetValue(chunk, index + itter);
-                            if (node != null)
-                                node.isoValue = Mathf.Min(Mathf.Max(node.isoValue + rate, 0), 1);
-                        }
-                    }
-                }
+                ModifyTerrain(hit, (Input.GetMouseButton(0) ? addRate : -removeRate) * Time.deltaTime, radius);
                 UpdateAllChunks();
             }
         }

@@ -99,6 +99,13 @@ public class Voxel
     private Node[] m_verticies;
 }
 
+public struct VoxelRaycastHit
+{
+    public Vector3 point;
+    public Chunk chunk;
+    public Vector3Int voxelIndex;
+}
+
 public class Utility
 {
     public static int GetCubeIndex(Voxel cube, float surfaceLevel)
