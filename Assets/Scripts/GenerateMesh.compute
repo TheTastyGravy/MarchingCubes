@@ -1,0 +1,134 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Main
+#include "MarchTables.compute"
+
+// In
+StructuredBuffer<float2> points;    //iso, matID
+int numPointsPerAxis;
+float surfaceLevel;
+// Out
+struct TriData
+{
+    float3 pos0;
+    float3 norm0;
+    float2 uv0;
+
+    float3 pos1;
+    float3 norm1;
+    float2 uv1;
+
+    float3 pos2;
+    float3 norm2;
+    float2 uv2;
+};
+AppendStructuredBuffer<TriData> triangles;
+
+
+struct CubeVertex
+{
+    float x;
+    float y;
+    float z;
+    float iso;
+    float materialID;
+};
+
+
+
+CubeVertex getCubeVertex(int x, int y, int z)
+{
+    CubeVertex res;
+    res.x = x;
+    res.y = y;
+    res.z = z;
+    res.iso = points[(x * numPointsPerAxis + y) * numPointsPerAxis + z].x;
+    res.materialID = points[(x * numPointsPerAxis + y) * numPointsPerAxis + z].y;
+    return res;
+}
+
+float3 lerpEdge(CubeVertex v0, CubeVertex v1)
+{
+    float t = (surfaceLevel - v0.iso) / (v1.iso - v0.iso);
+    float3 res;
+    res.x = v0.x + (v1.x - v0.x) * t;
+    res.y = v0.y + (v1.y - v0.y) * t;
+    res.z = v0.z + (v1.z - v0.z) * t;
+    return res;
+}
+
+[numthreads(8,8,8)]
+void Main(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numPointsPerAxis - 1 || id.y >= numPointsPerAxis - 1 || id.z >= numPointsPerAxis - 1)
+    {
+        return;
+    }
+
+    CubeVertex voxel[8] =
+    {
+        getCubeVertex(id.x, id.y, id.z),
+        getCubeVertex(id.x + 1, id.y, id.z),
+        getCubeVertex(id.x + 1, id.y, id.z + 1),
+        getCubeVertex(id.x, id.y, id.z + 1),
+        getCubeVertex(id.x, id.y + 1, id.z),
+        getCubeVertex(id.x + 1, id.y + 1, id.z),
+        getCubeVertex(id.x + 1, id.y + 1, id.z + 1),
+        getCubeVertex(id.x, id.y + 1, id.z + 1)
+    };
+
+    // Check each point is valid. this could be improved
+    for (int i = 0; i < 8; i++)
+    {
+        if (voxel[i].materialID == -1)
+        {
+            return;
+        }
+    }
+
+    int cubeIndex = 0;
+    if (voxel[0].iso <= surfaceLevel) cubeIndex |= 1;
+    if (voxel[1].iso <= surfaceLevel) cubeIndex |= 2;
+    if (voxel[2].iso <= surfaceLevel) cubeIndex |= 4;
+    if (voxel[3].iso <= surfaceLevel) cubeIndex |= 8;
+    if (voxel[4].iso <= surfaceLevel) cubeIndex |= 16;
+    if (voxel[5].iso <= surfaceLevel) cubeIndex |= 32;
+    if (voxel[6].iso <= surfaceLevel) cubeIndex |= 64;
+    if (voxel[7].iso <= surfaceLevel) cubeIndex |= 128;
+
+    if (cubeIndex == 0 || cubeIndex == 255)
+    {
+        return;
+    }
+
+    TriData tri;
+    for (int j = 0; triangleTable[cubeIndex][j] != -1; j += 3)
+    {
+        int a0 = edgeConnection[triangleTable[cubeIndex][j+2]][0];
+        int b0 = edgeConnection[triangleTable[cubeIndex][j+2]][1];
+        int a1 = edgeConnection[triangleTable[cubeIndex][j+1]][0];
+        int b1 = edgeConnection[triangleTable[cubeIndex][j+1]][1];
+        int a2 = edgeConnection[triangleTable[cubeIndex][j]][0];
+        int b2 = edgeConnection[triangleTable[cubeIndex][j]][1];
+
+        tri.pos0 = lerpEdge(voxel[a0], voxel[b0]);
+        tri.pos1 = lerpEdge(voxel[a1], voxel[b1]);
+        tri.pos2 = lerpEdge(voxel[a2], voxel[b2]);
+
+        float3 p0 = tri.pos1 - tri.pos0;
+        float3 p1 = tri.pos2 - tri.pos0;
+        float3 normal;
+        normal.x = (p0.y * p1.z - p1.y * p0.z);
+        normal.y = (p0.x * p1.z - p1.x * p0.z) * -1;
+        normal.z = (p0.x * p1.y - p1.x * p0.y);
+
+        tri.norm0 = normal;
+        tri.norm1 = normal;
+        tri.norm2 = normal;
+
+        tri.uv0 = max(voxel[a0].materialID, voxel[b0].materialID), 0;
+        tri.uv1 = max(voxel[a1].materialID, voxel[b1].materialID), 0;
+        tri.uv2 = max(voxel[a2].materialID, voxel[b2].materialID), 0;
+
+        triangles.Append(tri);
+    }
+}

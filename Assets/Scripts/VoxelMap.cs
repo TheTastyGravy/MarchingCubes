@@ -27,17 +27,32 @@ public class VoxelMap : MonoBehaviour
     [Space]
     public float surface = 0.5f;
     public float noiseSize = 1;
-    public bool smooth;
-    public bool useCustomNormals;
-    
-    [SerializeField, HideInInspector]
-    private bool currentSmooth;
-    [SerializeField, HideInInspector]
-    private bool currentNormals;
 
     public bool drawDebug = false;
     [SerializeField, HideInInspector]
     private List<Vector3> debugList = new List<Vector3>();
+
+    [Space]
+    [SerializeField]
+    private ComputeShader computeShader;
+
+    private ComputeBuffer pointBuffer;
+    private GraphicsBuffer triangleBuffer;
+    private ComputeBuffer triCountBuffer;
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct VertexData
+    {
+        public Vector3 position;
+        public Vector3 normal;
+        public Vector2 uv;
+    };
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct PointData
+    {
+        public float iso;
+        public float matID;
+    };
 
 
 
@@ -141,20 +156,81 @@ public class VoxelMap : MonoBehaviour
             return;
         }
 
-        List<Vector3> verticies = new List<Vector3>();
-        List<int> triangles = new List<int>();
-        List<Vector3> normals = new List<Vector3>();
-        List<Vector2> uvs = new List<Vector2>();
-        MarchingCubes.MarchCubes(chunk, surface, smooth, verticies, triangles, normals, uvs);
+        if (triangleBuffer == null)
+        {
+            CreateBuffers();
+        }
+        else
+        {
+            triangleBuffer.SetCounterValue(0);
+        }
+
+        int pointDataSize = ChunkSize + 1;
+        int numThreadsPerAxis = Mathf.CeilToInt(pointDataSize / 8);
+
+        
+        PointData[] pointData = new PointData[pointDataSize * pointDataSize * pointDataSize];
+        PointData tempData = new PointData();
+        for (int x = 0; x < pointDataSize; x++)
+        {
+            for (int y = 0; y < pointDataSize; y++)
+            {
+                for (int z = 0; z < pointDataSize; z++)
+                {
+                    Node n = Utility.GetValue(chunk, x, y, z);
+                    if (n != null)
+                    {
+                        tempData.iso = n.isoValue;
+                        tempData.matID = n.materialID;
+                    }
+                    else
+                    {
+                        tempData.iso = 0;
+                        tempData.matID = -1;
+                    }
+                    pointData[(x * pointDataSize + y) * pointDataSize + z] = tempData;
+                }
+            }
+        }
+        pointBuffer.SetData(pointData, 0, 0, pointDataSize * pointDataSize * pointDataSize);
+
+        computeShader.SetBuffer(0, "points", pointBuffer);
+        computeShader.SetInt("numPointsPerAxis", pointDataSize);
+        computeShader.SetFloat("surfaceLevel", surface);
+        computeShader.SetBuffer(0, "triangles", triangleBuffer);
+        computeShader.Dispatch(0, numThreadsPerAxis, numThreadsPerAxis, numThreadsPerAxis);
+
+        GraphicsBuffer.CopyCount(triangleBuffer, triCountBuffer, 0);
+        int[] triCountArray = { 0 };
+        triCountBuffer.GetData(triCountArray);
+        int numTris = triCountArray[0] * 3;
+        VertexData[] triData = new VertexData[numTris];
+        triangleBuffer.GetData(triData, 0, 0, numTris);
+        var layout = new[]
+        {
+            new UnityEngine.Rendering.VertexAttributeDescriptor(UnityEngine.Rendering.VertexAttribute.Position, UnityEngine.Rendering.VertexAttributeFormat.Float32, 3),
+            new UnityEngine.Rendering.VertexAttributeDescriptor(UnityEngine.Rendering.VertexAttribute.Normal, UnityEngine.Rendering.VertexAttributeFormat.Float32, 3),
+            new UnityEngine.Rendering.VertexAttributeDescriptor(UnityEngine.Rendering.VertexAttribute.TexCoord0, UnityEngine.Rendering.VertexAttributeFormat.Float32, 2, 0),
+        };
 
         chunk.mesh.Clear();
-        chunk.mesh.SetVertices(verticies);
-        chunk.mesh.SetTriangles(triangles, 0);
-        chunk.mesh.SetUVs(0, uvs);
-        if (useCustomNormals)
-            chunk.mesh.SetNormals(normals);
-        else
-            chunk.mesh.RecalculateNormals();
+        chunk.mesh.SetVertexBufferParams(numTris, layout);
+        chunk.mesh.SetVertexBufferData<VertexData>(triData, 0, 0, numTris);
+        int[] indexes = new int[numTris];
+        for (int i = 0; i < numTris; i += 3)
+        {
+            indexes[i] = i + 1;
+            indexes[i + 1] = i + 2;
+            indexes[i + 2] = i;
+        }
+        chunk.mesh.SetTriangles(indexes, 0);
+
+#if UNITY_EDITOR
+        if (!EditorApplication.isPlaying)
+        {
+            ReleaseBuffers();
+        }
+#endif
     }
 
     private void UpdateAllChunks()
@@ -162,6 +238,39 @@ public class VoxelMap : MonoBehaviour
         foreach (Chunk chunk in chunks)
         {
             UpdateChunk(chunk);
+        }
+    }
+
+    void CreateBuffers()
+    {
+        int pointDataSize = ChunkSize + 1;
+        int numVoxels = pointDataSize * pointDataSize * pointDataSize;
+        int maxTriangleCount = numVoxels * 5;
+
+        // Always create buffers in editor (since buffers are released immediately to prevent memory leak)
+        // Otherwise, only create if null
+        if (!Application.isPlaying || (pointBuffer == null))
+        {
+            if (Application.isPlaying)
+            {
+                ReleaseBuffers();
+            }
+            triangleBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Append, maxTriangleCount, sizeof(float) * 8 * 3);
+            pointBuffer = new ComputeBuffer(numVoxels, sizeof(float) * 2);
+            triCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
+        }
+    }
+
+    void ReleaseBuffers()
+    {
+        if (triangleBuffer != null)
+        {
+            triangleBuffer.Release();
+            triangleBuffer = null;
+            pointBuffer.Release();
+            pointBuffer = null;
+            triCountBuffer.Release();
+            triCountBuffer = null;
         }
     }
 
@@ -353,7 +462,7 @@ public class VoxelMap : MonoBehaviour
             {
                 verticies.Clear();
                 triangles.Clear();
-                MarchingCubes.ProcessCube(voxel, verticies, triangles, surface, smooth);
+                MarchingCubes.ProcessCube(voxel, verticies, triangles, surface, true);
                 if (verticies.Count > 0)
                 {
                     // Check for intersection with each triangle
@@ -546,18 +655,6 @@ public class VoxelMap : MonoBehaviour
         {
             setValues = false;
             SetValuesForAllChunks();
-        }
-
-        if (smooth != currentSmooth)
-        {
-            currentSmooth = smooth;
-            UpdateAllChunks();
-        }
-
-        if (useCustomNormals != currentNormals)
-        {
-            currentNormals = useCustomNormals;
-            UpdateAllChunks();
         }
     }
     
