@@ -20,6 +20,8 @@ public class Chunk
     public GameObject meshObject;
     public MeshFilter meshFilter;
     public Mesh mesh;
+    public GraphicsBuffer vertexBuffer;
+    public GraphicsBuffer indexBuffer;
 }
 
 public class Voxel

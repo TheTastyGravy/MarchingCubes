@@ -1,11 +1,13 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel Main
+#pragma kernel ClearUnused
 #include "MarchTables.compute"
 
 // In
 StructuredBuffer<float2> points;    //iso, matID
 int numPointsPerAxis;
 float surfaceLevel;
+uint maxTriangles;
 // Out
 struct TriData
 {
@@ -21,7 +23,11 @@ struct TriData
     float3 norm2;
     float2 uv2;
 };
-AppendStructuredBuffer<TriData> triangles;
+RWByteAddressBuffer vertBuffer;
+RWByteAddressBuffer indexBuffer;
+
+// Used for counting triangles
+RWStructuredBuffer<uint> triCounter;
 
 
 struct CubeVertex
@@ -32,6 +38,35 @@ struct CubeVertex
     float iso;
     float materialID;
 };
+
+
+#define SIZEOF_FLOAT3 12
+#define SIZEOF_FLOAT2 8
+#define SIZEOF_UINT 4
+
+void writeTri(uint index, TriData data)
+{
+    // Get the count to find where in the buffer to store this triangle
+    index *= 3;
+
+    indexBuffer.Store3(index * SIZEOF_UINT, uint3(index, index + 1, index + 2));
+
+    uint vertAddr = index * (SIZEOF_FLOAT3 * 2 + SIZEOF_FLOAT2);
+    vertBuffer.Store3(vertAddr, asuint(data.pos0));
+    vertBuffer.Store3(vertAddr + SIZEOF_FLOAT3, asuint(data.norm0));
+    vertBuffer.Store2(vertAddr + SIZEOF_FLOAT3 * 2, asuint(data.uv0));
+
+    vertAddr += SIZEOF_FLOAT3 * 2 + SIZEOF_FLOAT2;
+    vertBuffer.Store3(vertAddr, asuint(data.pos1));
+    vertBuffer.Store3(vertAddr + SIZEOF_FLOAT3, asuint(data.norm1));
+    vertBuffer.Store2(vertAddr + SIZEOF_FLOAT3 * 2, asuint(data.uv1));
+
+    vertAddr += SIZEOF_FLOAT3 * 2 + SIZEOF_FLOAT2;
+    vertBuffer.Store3(vertAddr, asuint(data.pos2));
+    vertBuffer.Store3(vertAddr + SIZEOF_FLOAT3, asuint(data.norm2));
+    vertBuffer.Store2(vertAddr + SIZEOF_FLOAT3 * 2, asuint(data.uv2));
+}
+
 
 
 
@@ -129,6 +164,38 @@ void Main(uint3 id : SV_DispatchThreadID)
         tri.uv1 = max(voxel[a1].materialID, voxel[b1].materialID), 0;
         tri.uv2 = max(voxel[a2].materialID, voxel[b2].materialID), 0;
 
-        triangles.Append(tri);
+        //vertBuffer.Append(tri);
+        uint count = triCounter.IncrementCounter();
+        if (count >= maxTriangles) return;
+        writeTri(count, tri);
+    }
+}
+
+
+[numthreads(64, 1, 1)]
+void ClearUnused(uint id : SV_DispatchThreadID)
+{
+    TriData data;
+    data.pos0 = 0;
+    data.pos1 = 0;
+    data.pos2 = 0;
+    data.norm0 = 0;
+    data.norm1 = 0;
+    data.norm2 = 0;
+    data.uv0 = 0;
+    data.uv1 = 0;
+    data.uv2 = 0;
+
+    while (true)
+    {
+        uint count = triCounter.IncrementCounter();
+        if (count >= maxTriangles) break;
+        //uint vidx = count * 3;
+        //WriteVertex(vidx + 0, 0, 0);
+        //WriteVertex(vidx + 1, 0, 0);
+        //WriteVertex(vidx + 2, 0, 0);
+        //WriteIndices(vidx, uint3(0, 0, 0));
+
+        writeTri(count, data);
     }
 }
