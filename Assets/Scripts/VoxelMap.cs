@@ -24,6 +24,8 @@ public class VoxelMap : MonoBehaviour
     public bool generate = false;
     public bool setValues = false;
     public bool rebuildChunks = false;
+    public bool save = false;
+    public bool load = false;
     [Space]
     public float addRate = 1;
     public float removeRate = 1;
@@ -137,7 +139,7 @@ public class VoxelMap : MonoBehaviour
 
         chunks.Remove(chunk);
 
-        chunk.mesh.Clear();
+        chunk.mesh?.Clear();
 #if UNITY_EDITOR
         // Work around to allow objects to be destroyed in editor
         IEnumerator DelayedDestroy(GameObject obj)
@@ -150,8 +152,10 @@ public class VoxelMap : MonoBehaviour
         }
         StartCoroutine(DelayedDestroy(chunk.meshObject));
 #else
-        chunk.vertexBuffer.Release();
-        chunk.indexBuffer.Release();
+        if (chunk.vertexBuffer != null)
+            chunk.vertexBuffer.Release();
+        if (chunk.indexBuffer != null)
+            chunk.indexBuffer.Release();
         Destroy(chunk.meshObject);
 #endif
     }
@@ -232,8 +236,13 @@ public class VoxelMap : MonoBehaviour
         computeShader.SetBuffer(0, "triCounter", counterBuffer);
         computeShader.Dispatch(0, numThreadsPerAxis, numThreadsPerAxis, numThreadsPerAxis);
         // Clear unused vertexes in the mesh
+#if UNITY_EDITOR
         computeShader.SetBuffer(1, "vertBuffer", vertBuff);
         computeShader.SetBuffer(1, "indexBuffer", indexBuff);
+#else
+        computeShader.SetBuffer(1, "vertBuffer", chunk.vertexBuffer);
+        computeShader.SetBuffer(1, "indexBuffer", chunk.indexBuffer);
+#endif
         computeShader.SetBuffer(1, "triCounter", counterBuffer);
         computeShader.Dispatch(1, 1, 1, 1);
 
@@ -671,6 +680,26 @@ public class VoxelMap : MonoBehaviour
             DestroyAllChunks();
             SetValuesForAllChunks();
             UpdateAllChunks();
+        }
+
+        if (save)
+        {
+            save = false;
+            FileHandler fh = FileHandler.Instance;
+            foreach (Chunk chunk in chunks)
+            {
+                fh.SaveChunk(chunk);
+            }
+        }
+        if (load)
+        {
+            load = false;
+            FileHandler fh = FileHandler.Instance;
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                Chunk chunk = chunks[i];
+                fh.LoadChunk(ref chunk);
+            }
         }
     }
     
