@@ -418,6 +418,7 @@ public class VoxelMap : MonoBehaviour
             if (chunk == null)
             {
                 hit.point = origin;
+                hit.surfaceNormal = Vector3.zero;
                 hit.chunk = null;
                 hit.voxelIndex = index;
                 return false;
@@ -493,6 +494,7 @@ public class VoxelMap : MonoBehaviour
                         if (Utility.RayTriangleIntersect(origin, direction, tri, out Vector3 intersect))
                         {
                             hit.point = transform.worldToLocalMatrix * intersect;
+                            hit.surfaceNormal = Vector3.Cross(tri[1] - tri[0], tri[2] - tri[0]).normalized;
                             hit.chunk = chunk;
                             hit.voxelIndex = index;
                             if (drawDebug)
@@ -574,6 +576,7 @@ public class VoxelMap : MonoBehaviour
         if (drawDebug)
             Debug.DrawLine(origin, origin + direction * 50, Color.red, 0.001f);
         hit.point = tMax;
+        hit.surfaceNormal = Vector3.zero;
         hit.chunk = chunk;
         hit.voxelIndex = index;
         return false;

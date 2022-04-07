@@ -104,6 +104,7 @@ public class Voxel
 public struct VoxelRaycastHit
 {
     public Vector3 point;
+    public Vector3 surfaceNormal;
     public Chunk chunk;
     public Vector3Int voxelIndex;
 }
