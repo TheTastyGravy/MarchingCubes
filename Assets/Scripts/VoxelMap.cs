@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -16,6 +16,8 @@ public class VoxelMap : MonoBehaviour
     [SerializeField, HideInInspector]
     internal List<Chunk> chunks = new List<Chunk>();
     public Material meshMaterial;
+    [Tooltip("Textures used for MaterialID, and indexed accordingly")]
+    public Texture2D[] customMaterialTextures;
 
     //temp
     private Camera cam;
@@ -59,6 +61,8 @@ public class VoxelMap : MonoBehaviour
     };
 
 
+    public bool doTest = false;
+
 
     public Chunk GetChunk(Vector3Int position)
     {
@@ -101,7 +105,8 @@ public class VoxelMap : MonoBehaviour
         {
             new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
             new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3),
-            new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2),
+            new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 3),
+            new VertexAttributeDescriptor(VertexAttribute.TexCoord1, VertexAttributeFormat.Float32, 3)
         };
         newChunk.mesh.SetVertexBufferParams(MaxTriCount * 3, layout);
         newChunk.mesh.SetIndexBufferParams(MaxTriCount * 3, IndexFormat.UInt32);
@@ -116,6 +121,15 @@ public class VoxelMap : MonoBehaviour
         newChunk.meshFilter.mesh = newChunk.mesh;
         MeshRenderer newRenderer = newChunk.meshObject.AddComponent<MeshRenderer>();
         newRenderer.sharedMaterial = meshMaterial;
+        // Set texture array in property block
+        Texture2DArray texArray = new Texture2DArray(2048, 2048, customMaterialTextures.Length, TextureFormat.RGBA32, false);
+        for (int i = 0; i < customMaterialTextures.Length; i++)
+        {
+            Graphics.CopyTexture(customMaterialTextures[i], 0, 0, texArray, i, 0);
+        }
+        MaterialPropertyBlock propertyBlock = new MaterialPropertyBlock();
+        propertyBlock.SetTexture("_MatTex", texArray);
+        newRenderer.SetPropertyBlock(propertyBlock);
 
         chunks.Add(newChunk);
         return newChunk;
@@ -700,6 +714,12 @@ public class VoxelMap : MonoBehaviour
                 fh.LoadChunk(ref chunk);
             }
         }
+
+        if (doTest)
+        {
+            doTest = false;
+            BenchmarkFunc();
+        }
     }
     
     private void Update()
@@ -724,6 +744,36 @@ public class VoxelMap : MonoBehaviour
         DestroyAllChunks();
         SetValuesForAllChunks();
         UpdateAllChunks();
+    }
+
+
+    public void BenchmarkFunc()
+    {
+        int count = 100;
+
+        Chunk chunk = chunks[0];
+        System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+        System.TimeSpan[] times = new System.TimeSpan[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            sw.Start();
+
+            UpdateChunk(chunk);
+
+            sw.Stop();
+            times[i] = sw.Elapsed;
+            sw.Reset();
+        }
+
+        System.TimeSpan total = new System.TimeSpan();
+        for (int i = 0; i < count; i++)
+        {
+            total += times[i];
+        }
+        total /= count;
+
+        Debug.Log("Avg time: " + total.TotalMilliseconds);
     }
 
 

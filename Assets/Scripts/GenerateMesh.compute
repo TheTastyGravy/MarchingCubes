@@ -24,16 +24,16 @@ struct CubeVertex
     float materialID;
 };
 #define SIZEOF_FLOAT3 12
-#define SIZEOF_FLOAT2 8
 #define SIZEOF_UINT 4
 
 // Writes vertex data to vertBuffer
-void WriteVert(uint vertIndex, float3 pos, float3 norm, float2 uv)
+void WriteVert(uint vertIndex, float3 pos, float3 norm, float3 bary, float3 mat)
 {
-    vertIndex *= SIZEOF_FLOAT3 * 2 + SIZEOF_FLOAT2;
+    vertIndex *= SIZEOF_FLOAT3 * 4;
     vertBuffer.Store3(vertIndex, asuint(pos));
     vertBuffer.Store3(vertIndex + SIZEOF_FLOAT3, asuint(norm));
-    vertBuffer.Store2(vertIndex + SIZEOF_FLOAT3 * 2, asuint(uv));
+    vertBuffer.Store3(vertIndex + SIZEOF_FLOAT3 * 2, asuint(bary));
+    vertBuffer.Store3(vertIndex + SIZEOF_FLOAT3 * 3, asuint(mat));
 }
 
 // Write tri indexes to indexBuffer
@@ -104,24 +104,23 @@ void MarchCubes(uint3 id : SV_DispatchThreadID)
 
     for (int j = 0; triangleTable[cubeIndex][j] != -1; j += 3)
     {
-        float3 pos0, pos1, pos2;
-        float2 uv0, uv1, uv2;
+        float3 pos0, pos1, pos2, matData;
         uint a, b;
         // Vertex 0
         a = edgeConnection[triangleTable[cubeIndex][j+2]][0];
         b = edgeConnection[triangleTable[cubeIndex][j+2]][1];
         pos0 = LerpEdge(voxel[a], voxel[b]);
-        uv0 = max(voxel[a].materialID, voxel[b].materialID), 0;
+        matData.x = voxel[a].iso <= surfaceLevel ? voxel[b].materialID : voxel[a].materialID;
         // Vertex 1
         a = edgeConnection[triangleTable[cubeIndex][j+1]][0];
         b = edgeConnection[triangleTable[cubeIndex][j+1]][1];
         pos1 = LerpEdge(voxel[a], voxel[b]);
-        uv1 = max(voxel[a].materialID, voxel[b].materialID), 0;
+        matData.y = voxel[a].iso <= surfaceLevel ? voxel[b].materialID : voxel[a].materialID;
         // Vertex 2
         a = edgeConnection[triangleTable[cubeIndex][j]][0];
         b = edgeConnection[triangleTable[cubeIndex][j]][1];
         pos2 = LerpEdge(voxel[a], voxel[b]);
-        uv2 = max(voxel[a].materialID, voxel[b].materialID), 0;
+        matData.z = voxel[a].iso <= surfaceLevel ? voxel[b].materialID : voxel[a].materialID;
         // Normal
         float3 p0 = pos1 - pos0;
         float3 p1 = pos2 - pos0;
@@ -133,9 +132,9 @@ void MarchCubes(uint3 id : SV_DispatchThreadID)
         uint count = triCounter.IncrementCounter();
         if (count >= maxTriangles) break;
         count *= 3; // tri count -> vert count
-        WriteVert(count, pos0, normal, uv0);
-        WriteVert(count+1, pos1, normal, uv1);
-        WriteVert(count+2, pos2, normal, uv2);
+        WriteVert(count, pos0, normal, float3(1, 0, 0), matData);
+        WriteVert(count+1, pos1, normal, float3(0, 1, 0), matData);
+        WriteVert(count+2, pos2, normal, float3(0, 0, 1), matData);
         WriteIndexes(count);
     }
 }
@@ -144,17 +143,15 @@ void MarchCubes(uint3 id : SV_DispatchThreadID)
 [numthreads(64, 1, 1)]
 void ClearUnused(uint id : SV_DispatchThreadID)
 {
-    float3 pos = 0;
-    float3 normal = 0;
-    float2 uv = 0;
+    float3 f3 = 0;
     while (true)
     {
         uint count = triCounter.IncrementCounter();
         if (count >= maxTriangles) break;
         count *= 3; // tri count -> vert count
-        WriteVert(count, pos, normal, uv);
-        WriteVert(count + 1, pos, normal, uv);
-        WriteVert(count + 2, pos, normal, uv);
+        WriteVert(count, f3, f3, f3, f3);
+        WriteVert(count + 1, f3, f3, f3, f3);
+        WriteVert(count + 2, f3, f3, f3, f3);
         WriteIndexes(count);
     }
 }
