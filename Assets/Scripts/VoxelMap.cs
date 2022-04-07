@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -187,7 +187,7 @@ public class VoxelMap : MonoBehaviour
         }
 
         int pointDataSize = ChunkSize + 1;
-        int numThreadsPerAxis = Mathf.CeilToInt(pointDataSize / 8);
+        int numThreadsPerAxis = Mathf.CeilToInt(pointDataSize / 4);
 
         counterBuffer.SetCounterValue(0);
         // Setup point cloud to include neighbours
@@ -273,10 +273,6 @@ public class VoxelMap : MonoBehaviour
         // Otherwise, only create if null
         if (!Application.isPlaying || (pointBuffer == null))
         {
-            if (Application.isPlaying)
-            {
-                ReleaseBuffers();
-            }
             pointBuffer = new ComputeBuffer(numVoxels, sizeof(float) * 2);
             counterBuffer = new ComputeBuffer(1, 4, ComputeBufferType.Counter);
         }
@@ -286,9 +282,9 @@ public class VoxelMap : MonoBehaviour
     {
         if (pointBuffer != null)
         {
-            pointBuffer.Release();
+            pointBuffer.Dispose();
             pointBuffer = null;
-            counterBuffer.Release();
+            counterBuffer.Dispose();
             counterBuffer = null;
         }
     }

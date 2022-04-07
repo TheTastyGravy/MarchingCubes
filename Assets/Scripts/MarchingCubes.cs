@@ -4,7 +4,7 @@ using UnityEngine;
 public class MarchingCubes
 {
     /// <summary>
-    /// Generate mesh data for chunk, including gaps with neighbours
+    /// Generate mesh data for chunk, including gaps with neighbours and shared verticies with smoothed normals
     /// </summary>
     /// <param name="chunk"></param>
     /// <param name="surfaceLevel"></param>
@@ -15,6 +15,10 @@ public class MarchingCubes
     /// <param name="uvs"></param>
     public static void MarchCubes(Chunk chunk, float surfaceLevel, bool useSmoothing, List<Vector3> verticies, List<int> triangles, List<Vector3> normals, List<Vector2> uvs)
     {
+        // This is the old method used for generating meshes. It uses shared verticies and generates normals 
+        // using its neighbours data. It also stores material data in UVs using a crude method where the shader 
+        // would use the alternitive material if the first value of the UV is above 0. This has been replaced 
+        // with a compute shader.
         int sizeX = chunk.nodes.SizeX;
         int sizeY = chunk.nodes.SizeY;
         int sizeZ = chunk.nodes.SizeZ;
