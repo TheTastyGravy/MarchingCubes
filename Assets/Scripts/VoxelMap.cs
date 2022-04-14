@@ -15,37 +15,23 @@ public class VoxelMap : MonoBehaviour
 
     [SerializeField, HideInInspector]
     internal List<Chunk> chunks = new List<Chunk>();
+
+    public ChunkGenerator chunkGenerator;
+    [Space]
     public Material meshMaterial;
     [Tooltip("Textures used for MaterialID, and indexed accordingly")]
     public Texture2D[] customMaterialTextures;
-
-    //temp
-    private Camera cam;
-    [Space]
-    public Vector2Int chunkCount = Vector2Int.zero;
-    public bool generate = false;
-    public bool setValues = false;
-    public bool rebuildChunks = false;
-    public bool save = false;
-    public bool load = false;
-    [Space]
-    public float addRate = 1;
-    public float removeRate = 1;
-    public float radius = 1.25f;
     [Space]
     public float surface = 0.5f;
-    public float noiseSize = 1;
-
+    [Space]
     public bool drawDebug = false;
     [SerializeField, HideInInspector]
     private List<Vector3> debugList = new List<Vector3>();
-
     [Space]
     [SerializeField]
     private ComputeShader computeShader;
     private ComputeBuffer pointBuffer;
     private ComputeBuffer counterBuffer;
-
     // Used to structure the point buffer passed to the compute shader
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     struct PointData
@@ -65,7 +51,6 @@ public class VoxelMap : MonoBehaviour
     {
         return chunks.Exists((Chunk chunk) => chunk.position == position);
     }
-
 
     /// <summary>
     /// Create a new chunk at a position
@@ -137,6 +122,7 @@ public class VoxelMap : MonoBehaviour
             if (!fh.LoadChunk(ref newChunk))
             {
                 // Generate new chunk data
+                chunkGenerator.GenerateChunkData(ref newChunk);
             }
 
             if (state == Chunk.ChunkState.Active)
@@ -147,12 +133,6 @@ public class VoxelMap : MonoBehaviour
 
         chunks.Add(newChunk);
         return newChunk;
-    }
-
-    internal void DestroyChunk(Vector3Int position)
-    {
-        Chunk chunk = GetChunk(position);
-        DestroyChunk(chunk);
     }
 
     internal void DestroyChunk(Chunk chunk)
@@ -222,6 +202,7 @@ public class VoxelMap : MonoBehaviour
             if (!fh.LoadChunk(ref chunk))
             {
                 // Generate new chunk data
+                chunkGenerator.GenerateChunkData(ref chunk);
             }
         }
 
@@ -303,15 +284,16 @@ public class VoxelMap : MonoBehaviour
                 if (!fh.LoadChunk(ref chunk))
                 {
                     // Generate new chunk data
+                    chunkGenerator.GenerateChunkData(ref chunk);
                 }
             }
 
-            if (state == Chunk.ChunkState.Active)
+            if (chunk.savedState == Chunk.ChunkState.Active)
             {
                 chunk.meshObject.SetActive(true);
                 GenerateChunkMesh(chunk);
             }
-            else if (state == Chunk.ChunkState.Inactive)
+            else if (chunk.savedState == Chunk.ChunkState.Inactive)
             {
                 chunk.meshObject.SetActive(false);
                 // We cant just clear the mesh because that will break the vert and index bufffers, 
@@ -343,7 +325,7 @@ public class VoxelMap : MonoBehaviour
 #endif
             }
 
-            chunk.currentState = state;
+            chunk.currentState = chunk.savedState;
         }
     }
 
@@ -438,14 +420,6 @@ public class VoxelMap : MonoBehaviour
 #endif
     }
 
-    private void UpdateAllChunks()
-    {
-        foreach (Chunk chunk in chunks)
-        {
-            GenerateChunkMesh(chunk);
-        }
-    }
-
     private void CreateBuffers()
     {
         int pointDataSize = ChunkSize + 1;
@@ -469,32 +443,6 @@ public class VoxelMap : MonoBehaviour
             counterBuffer.Dispose();
             counterBuffer = null;
         }
-    }
-
-
-    //temp func. node data would be set by user
-    private void SetValuesForAllChunks()
-    {
-        Vector3 offset = new Vector3(Random.Range(0f, 100f), Random.Range(0f, 100f), Random.Range(0f, 100f));
-        for (int x = 0; x < chunkCount.x; x++)
-        {
-            for (int y = 0; y < chunkCount.y; y++)
-            {
-                CreateChunk(new Vector3Int(x, y, 0), false);
-                SetChunkNodeValues(new Vector3Int(x, y, 0), offset);
-            }
-        }
-    }
-
-    private void DestroyAllChunks()
-    {
-        int count = chunks.Count;
-        for (int i = count - 1; i >= 0; i--)
-        {
-            DestroyChunk(chunks[i].position);
-        }
-
-        chunks.Clear();
     }
 
 
@@ -761,6 +709,7 @@ public class VoxelMap : MonoBehaviour
         return false;
     }
 
+
     /// <summary>
     /// Add or subtract from the iso value surrounding a raycast hit
     /// </summary>
@@ -835,123 +784,6 @@ public class VoxelMap : MonoBehaviour
             Gizmos.DrawCube(obj + new Vector3(0.5f,0.5f,0.5f), Vector3.one);
         }
         Gizmos.color = oldColor;
-    }
-
-
-    public Vector3Int chunkPos;
-    public Chunk.ChunkState state;
-    public bool updateChunk = false;
-
-    private void OnValidate()
-    {
-        if (chunkCount.x * chunkCount.y != chunks.Count)
-        {
-            DestroyAllChunks();
-            SetValuesForAllChunks();
-        }
-
-        if (generate)
-        {
-            generate = false;
-            UpdateAllChunks();
-        }
-        if (setValues)
-        {
-            setValues = false;
-            SetValuesForAllChunks();
-        }
-        if (rebuildChunks)
-        {
-            rebuildChunks = false;
-            DestroyAllChunks();
-            SetValuesForAllChunks();
-            UpdateAllChunks();
-        }
-
-        if (save)
-        {
-            save = false;
-            FileHandler fh = FileHandler.Instance;
-            foreach (Chunk chunk in chunks)
-            {
-                fh.SaveChunk(chunk);
-            }
-        }
-        if (load)
-        {
-            load = false;
-            FileHandler fh = FileHandler.Instance;
-            for (int i = 0; i < chunks.Count; i++)
-            {
-                Chunk chunk = chunks[i];
-                fh.LoadChunk(ref chunk);
-            }
-        }
-
-        if (updateChunk)
-        {
-            updateChunk = false;
-            SetChunkStateImmediate(chunkPos, state);
-        }
-    }
-    
-    private void Update()
-    {
-        if (cam == null)
-            cam = Camera.main;
-
-        // Left button used to add to surface, right button to remove. Simple implementation for testing
-        if (Input.GetMouseButton(0) || Input.GetMouseButton(1))
-        {
-            Ray mouseRay = cam.ScreenPointToRay(Input.mousePosition);
-            if (Raycast(mouseRay.origin, mouseRay.direction, out VoxelRaycastHit hit))
-            {
-                ModifyTerrain(hit, (Input.GetMouseButton(0) ? addRate : -removeRate) * Time.deltaTime, radius);
-                UpdateAllChunks();
-            }
-        }
-    }
-
-    private void Awake()
-    {
-        DestroyAllChunks();
-        SetValuesForAllChunks();
-        UpdateAllChunks();
-    }
-
-
-    //TODO: replace this with layered noise
-    public static float PerlinNoise3D(Vector3 xyz)
-    {
-        float xy = Mathf.PerlinNoise(xyz.x, xyz.y);
-        float xz = Mathf.PerlinNoise(xyz.x, xyz.z);
-        float yz = Mathf.PerlinNoise(xyz.y, xyz.z);
-        float yx = Mathf.PerlinNoise(xyz.y, xyz.x);
-        float zx = Mathf.PerlinNoise(xyz.z, xyz.x);
-        float zy = Mathf.PerlinNoise(xyz.z, xyz.y);
-
-        return (xy + xz + yz + yx + zx + zy) / 6f;
-    }
-
-    private void SetChunkNodeValues(Vector3Int index, Vector3 offset)
-    {
-        Chunk chunk = GetChunk(index);
-        Vector3 basePos = (Vector3)index * ChunkSize * noiseSize + offset;
-
-        for (int x = 0; x < chunk.nodes.Size.x; x++)
-        {
-            for (int y = 0; y < chunk.nodes.Size.y; y++)
-            {
-                for (int z = 0; z < chunk.nodes.Size.z; z++)
-                {
-                    if (chunk.nodes[x, y, z] == null)
-                        chunk.nodes[x, y, z] = new Node();
-                    Vector3 pos = basePos + new Vector3(x, y, z) * noiseSize;
-                    chunk.nodes[x, y, z].isoValue = PerlinNoise3D(pos);
-                    chunk.nodes[x, y, z].materialID = Mathf.CeilToInt(PerlinNoise3D((basePos + Vector3.one * 5) + new Vector3(x, y, z) * noiseSize * 3.5f) - 0.55f);
-                }
-            }
-        }
     }
 }
 

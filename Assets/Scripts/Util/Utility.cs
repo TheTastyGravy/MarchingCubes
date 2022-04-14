@@ -19,15 +19,23 @@ public class Chunk
         Disabled
     }
 
+    [SerializeField]
     internal FlatArray3D<Node> nodes;
+    [SerializeReference]
     internal VoxelMap map;
     // Used as an index in 3D space
+    [SerializeField]
     internal Vector3Int position;
+    [SerializeField]
     internal ChunkState currentState;
+    [SerializeField]
     internal ChunkState savedState;
 
+    [SerializeField]
     internal GameObject meshObject;
+    [SerializeField]
     internal MeshFilter meshFilter;
+    [SerializeField]
     internal Mesh mesh;
     internal GraphicsBuffer vertexBuffer;
     internal GraphicsBuffer indexBuffer;

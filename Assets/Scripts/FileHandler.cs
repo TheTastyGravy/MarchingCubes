@@ -67,6 +67,8 @@ public class FileHandler
             {
                 for (uint i = 0; i < chunk.nodes.Length; i++)
                 {
+                    if (chunk.nodes[i] == null)
+                        chunk.nodes[i] = new Node();
                     chunk.nodes[i].isoValue = bs.ReadSingle();
                     chunk.nodes[i].materialID = (int)bs.ReadByte();
                 }
