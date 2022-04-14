@@ -12,16 +12,30 @@ public class Node
 [System.Serializable]
 public class Chunk
 {
-    public FlatArray3D<Node> nodes;
-    public VoxelMap map;
-    // Used as an index in 3D space
-    public Vector3Int position;
+    public enum ChunkState
+    {
+        Active,
+        Inactive,
+        Disabled
+    }
 
-    public GameObject meshObject;
-    public MeshFilter meshFilter;
-    public Mesh mesh;
-    public GraphicsBuffer vertexBuffer;
-    public GraphicsBuffer indexBuffer;
+    internal FlatArray3D<Node> nodes;
+    internal VoxelMap map;
+    // Used as an index in 3D space
+    internal Vector3Int position;
+    internal ChunkState currentState;
+    internal ChunkState savedState;
+
+    internal GameObject meshObject;
+    internal MeshFilter meshFilter;
+    internal Mesh mesh;
+    internal GraphicsBuffer vertexBuffer;
+    internal GraphicsBuffer indexBuffer;
+
+    public VoxelMap Map => map;
+    public Vector3Int Position => position;
+    public ChunkState CurrentState => currentState;
+    public ChunkState SavedState => savedState;
 }
 
 public class Voxel

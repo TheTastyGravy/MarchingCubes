@@ -46,13 +46,7 @@ public class VoxelMap : MonoBehaviour
     private ComputeBuffer pointBuffer;
     private ComputeBuffer counterBuffer;
 
-    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    struct VertexData
-    {
-        public Vector3 position;
-        public Vector3 normal;
-        public Vector2 uv;
-    };
+    // Used to structure the point buffer passed to the compute shader
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     struct PointData
     {
@@ -60,8 +54,6 @@ public class VoxelMap : MonoBehaviour
         public float matID;
     };
 
-
-    public bool doTest = false;
 
 
     public Chunk GetChunk(Vector3Int position)
@@ -74,12 +66,15 @@ public class VoxelMap : MonoBehaviour
         return chunks.Exists((Chunk chunk) => chunk.position == position);
     }
 
+
     /// <summary>
     /// Create a new chunk at a position
     /// </summary>
     /// <param name="position">The position to create the chunk in</param>
-    /// <returns>The new chunk. If a chunk alrady exists at the position, returns null</returns>
-    public Chunk CreateChunk(Vector3Int position)
+    /// <param name="setupChunkImmediate">Should the chunks state be applied immediatly, or wait for UpdateChunkStates()?</param>
+    /// <param name="state">The state to initilize the chunk with</param>
+    /// <returns>The new chunk, or null if a chunk already exists in the position</returns>
+    internal Chunk CreateChunk(Vector3Int position, bool setupChunkImmediate, Chunk.ChunkState state = Chunk.ChunkState.Active)
     {
         if (ChunkExists(position))
         {
@@ -87,6 +82,8 @@ public class VoxelMap : MonoBehaviour
                 Utility.PrintWarning("Attempted to create a chunk in a used position");
             return null;
         }
+        if (state == Chunk.ChunkState.Disabled)
+            return null;
 
         Chunk newChunk = new Chunk();
         newChunk.nodes = new FlatArray3D<Node>(ChunkSize, ChunkSize, ChunkSize);
@@ -96,6 +93,7 @@ public class VoxelMap : MonoBehaviour
         newChunk.meshObject = new GameObject("Chunk (" + position.x + " " + position.y + " " + position.z + ")");
         newChunk.meshObject.transform.SetParent(transform);
         newChunk.meshObject.transform.SetPositionAndRotation(transform.position + position * ChunkSize, transform.rotation);
+        newChunk.meshObject.SetActive(state == Chunk.ChunkState.Active);
         // Setup mesh
         newChunk.mesh = new Mesh();
         newChunk.mesh.name = "Mesh (" + position.x + " " + position.y + " " + position.z + ")";
@@ -130,18 +128,34 @@ public class VoxelMap : MonoBehaviour
         MaterialPropertyBlock propertyBlock = new MaterialPropertyBlock();
         propertyBlock.SetTexture("_MatTex", texArray);
         newRenderer.SetPropertyBlock(propertyBlock);
+        // Setup the chunks state
+        newChunk.currentState = setupChunkImmediate ? state : Chunk.ChunkState.Disabled;
+        newChunk.savedState = state;
+        if (setupChunkImmediate)
+        {
+            FileHandler fh = FileHandler.Instance;
+            if (!fh.LoadChunk(ref newChunk))
+            {
+                // Generate new chunk data
+            }
+
+            if (state == Chunk.ChunkState.Active)
+            {
+                GenerateChunkMesh(newChunk);
+            }
+        }
 
         chunks.Add(newChunk);
         return newChunk;
     }
 
-    public void DestroyChunk(Vector3Int position)
+    internal void DestroyChunk(Vector3Int position)
     {
         Chunk chunk = GetChunk(position);
         DestroyChunk(chunk);
     }
 
-    public void DestroyChunk(Chunk chunk)
+    internal void DestroyChunk(Chunk chunk)
     {
         // Check we own this chunk
         if (chunk == null || !chunks.Contains(chunk))
@@ -174,19 +188,173 @@ public class VoxelMap : MonoBehaviour
 #endif
     }
 
+
     /// <summary>
-    /// Update a chunks mesh
+    /// Set a chunks state and immediatly apply it
     /// </summary>
-    public void UpdateChunk(Vector3Int position)
+    public void SetChunkStateImmediate(Vector3Int chunkPos, Chunk.ChunkState state)
     {
-        Chunk chunk = GetChunk(position);
-        UpdateChunk(chunk);
+        Chunk chunk = GetChunk(chunkPos);
+        // If the chunk does not exist, create it with the state
+        if (chunk == null)
+        {
+            CreateChunk(chunkPos, true, state);
+            return;
+        }
+
+        chunk.savedState = state;
+        if (chunk.currentState == state)
+            return;
+
+        // A disabled chunk is unloaded and destroied
+        if (state == Chunk.ChunkState.Disabled)
+        {
+            FileHandler fh = FileHandler.Instance;
+            fh.SaveChunk(chunk);
+            DestroyChunk(chunk);
+            return;
+        }
+
+        // If the chunk was disabled, load chunk data
+        if (chunk.currentState == Chunk.ChunkState.Disabled)
+        {
+            FileHandler fh = FileHandler.Instance;
+            if (!fh.LoadChunk(ref chunk))
+            {
+                // Generate new chunk data
+            }
+        }
+
+        if (state == Chunk.ChunkState.Active)
+        {
+            chunk.meshObject.SetActive(true);
+            GenerateChunkMesh(chunk);
+        }
+        else if (state == Chunk.ChunkState.Inactive)
+        {
+            chunk.meshObject.SetActive(false);
+            // We cant just clear the mesh because that will break the vert and index bufffers, 
+            // so instead we use the compute shaders second kernel to set all tris to 0.
+            if (pointBuffer == null)
+            {
+                CreateBuffers();
+            }
+#if UNITY_EDITOR
+            GraphicsBuffer vertBuff = chunk.mesh.GetVertexBuffer(0);
+            GraphicsBuffer indexBuff = chunk.mesh.GetIndexBuffer();
+            computeShader.SetBuffer(1, "vertBuffer", vertBuff);
+            computeShader.SetBuffer(1, "indexBuffer", indexBuff);
+#else
+            computeShader.SetBuffer(1, "vertBuffer", chunk.vertexBuffer);
+            computeShader.SetBuffer(1, "indexBuffer", chunk.indexBuffer);
+#endif
+            computeShader.SetInt("maxTriangles", MaxTriCount);
+            counterBuffer.SetCounterValue(0);
+            computeShader.SetBuffer(1, "triCounter", counterBuffer);
+            computeShader.Dispatch(1, 1, 1, 1);
+#if UNITY_EDITOR
+            vertBuff.Dispose();
+            indexBuff.Dispose();
+            if (!EditorApplication.isPlaying)
+            {
+                ReleaseBuffers();
+            }
+#endif
+        }
+
+        chunk.currentState = state;
     }
 
     /// <summary>
-    /// Update a chunks mesh
+    /// Set a chunks state. Note the change will not take effect until UpdateChunkStates() is called
     /// </summary>
-    public void UpdateChunk(Chunk chunk)
+    public void SetChunkState(Vector3Int chunkPos, Chunk.ChunkState state)
+    {
+        Chunk chunk = GetChunk(chunkPos);
+        if (chunk == null)
+            return;
+
+        chunk.savedState = state;
+    }
+
+    /// <summary>
+    /// Apply any state changes made to chunks via SetChunkState()
+    /// </summary>
+    public void UpdateChunkStates()
+    {
+        FileHandler fh = FileHandler.Instance;
+        for (int i = 0; i < chunks.Count; i++)
+        {
+            Chunk chunk = chunks[i];
+            if (chunk.currentState == chunk.savedState)
+                continue;
+
+            // A disabled chunk is unloaded and destroied
+            if (chunk.savedState == Chunk.ChunkState.Disabled)
+            {
+                fh.SaveChunk(chunk);
+                DestroyChunk(chunk);
+                continue;
+            }
+
+            // If the chunk was disabled, load chunk data
+            if (chunk.currentState == Chunk.ChunkState.Disabled)
+            {
+                if (!fh.LoadChunk(ref chunk))
+                {
+                    // Generate new chunk data
+                }
+            }
+
+            if (state == Chunk.ChunkState.Active)
+            {
+                chunk.meshObject.SetActive(true);
+                GenerateChunkMesh(chunk);
+            }
+            else if (state == Chunk.ChunkState.Inactive)
+            {
+                chunk.meshObject.SetActive(false);
+                // We cant just clear the mesh because that will break the vert and index bufffers, 
+                // so instead we use the compute shaders second kernel to set all tris to 0.
+                if (pointBuffer == null)
+                {
+                    CreateBuffers();
+                }
+#if UNITY_EDITOR
+                GraphicsBuffer vertBuff = chunk.mesh.GetVertexBuffer(0);
+                GraphicsBuffer indexBuff = chunk.mesh.GetIndexBuffer();
+                computeShader.SetBuffer(1, "vertBuffer", vertBuff);
+                computeShader.SetBuffer(1, "indexBuffer", indexBuff);
+#else
+                computeShader.SetBuffer(1, "vertBuffer", chunk.vertexBuffer);
+                computeShader.SetBuffer(1, "indexBuffer", chunk.indexBuffer);
+#endif
+                computeShader.SetInt("maxTriangles", MaxTriCount);
+                counterBuffer.SetCounterValue(0);
+                computeShader.SetBuffer(1, "triCounter", counterBuffer);
+                computeShader.Dispatch(1, 1, 1, 1);
+#if UNITY_EDITOR
+                vertBuff.Dispose();
+                indexBuff.Dispose();
+                if (!EditorApplication.isPlaying)
+                {
+                    ReleaseBuffers();
+                }
+#endif
+            }
+
+            chunk.currentState = state;
+        }
+    }
+
+
+    public void GenerateChunkMesh(Vector3Int position)
+    {
+        Chunk chunk = GetChunk(position);
+        GenerateChunkMesh(chunk);
+    }
+
+    public void GenerateChunkMesh(Chunk chunk)
     {
         if (chunk == null)
         {
@@ -274,11 +442,11 @@ public class VoxelMap : MonoBehaviour
     {
         foreach (Chunk chunk in chunks)
         {
-            UpdateChunk(chunk);
+            GenerateChunkMesh(chunk);
         }
     }
 
-    void CreateBuffers()
+    private void CreateBuffers()
     {
         int pointDataSize = ChunkSize + 1;
         int numVoxels = pointDataSize * pointDataSize * pointDataSize;
@@ -292,7 +460,7 @@ public class VoxelMap : MonoBehaviour
         }
     }
 
-    void ReleaseBuffers()
+    private void ReleaseBuffers()
     {
         if (pointBuffer != null)
         {
@@ -312,7 +480,7 @@ public class VoxelMap : MonoBehaviour
         {
             for (int y = 0; y < chunkCount.y; y++)
             {
-                CreateChunk(new Vector3Int(x, y, 0));
+                CreateChunk(new Vector3Int(x, y, 0), false);
                 SetChunkNodeValues(new Vector3Int(x, y, 0), offset);
             }
         }
@@ -328,6 +496,7 @@ public class VoxelMap : MonoBehaviour
 
         chunks.Clear();
     }
+
 
     /// <summary>
     /// Optimised raycast for generated mesh
@@ -669,6 +838,10 @@ public class VoxelMap : MonoBehaviour
     }
 
 
+    public Vector3Int chunkPos;
+    public Chunk.ChunkState state;
+    public bool updateChunk = false;
+
     private void OnValidate()
     {
         if (chunkCount.x * chunkCount.y != chunks.Count)
@@ -715,10 +888,10 @@ public class VoxelMap : MonoBehaviour
             }
         }
 
-        if (doTest)
+        if (updateChunk)
         {
-            doTest = false;
-            BenchmarkFunc();
+            updateChunk = false;
+            SetChunkStateImmediate(chunkPos, state);
         }
     }
     
@@ -744,36 +917,6 @@ public class VoxelMap : MonoBehaviour
         DestroyAllChunks();
         SetValuesForAllChunks();
         UpdateAllChunks();
-    }
-
-
-    public void BenchmarkFunc()
-    {
-        int count = 100;
-
-        Chunk chunk = chunks[0];
-        System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
-        System.TimeSpan[] times = new System.TimeSpan[count];
-
-        for (int i = 0; i < count; i++)
-        {
-            sw.Start();
-
-            UpdateChunk(chunk);
-
-            sw.Stop();
-            times[i] = sw.Elapsed;
-            sw.Reset();
-        }
-
-        System.TimeSpan total = new System.TimeSpan();
-        for (int i = 0; i < count; i++)
-        {
-            total += times[i];
-        }
-        total /= count;
-
-        Debug.Log("Avg time: " + total.TotalMilliseconds);
     }
 
 
